@@ -4,6 +4,15 @@ import importlib
 import os
 import uuid
 
+############################
+# set the python path properly
+import sys
+path_to_curr_file=os.path.realpath(__file__)
+proj_root=os.path.dirname(os.path.dirname(path_to_curr_file))
+if proj_root not in sys.path:
+    sys.path.insert(0,proj_root)
+############################
+
 import gym
 import numpy as np
 import seaborn
@@ -166,3 +175,5 @@ if __name__ == "__main__":  # noqa: C901
         exp_manager.save_trained_model(model)
     else:
         exp_manager.hyperparameters_optimization()
+
+    sys.path.remove(proj_root)

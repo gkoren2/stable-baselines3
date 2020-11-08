@@ -1,6 +1,14 @@
 import argparse
 import importlib
 import os
+############################
+# set the python path properly
+import sys
+path_to_curr_file=os.path.realpath(__file__)
+proj_root=os.path.dirname(os.path.dirname(path_to_curr_file))
+if proj_root not in sys.path:
+    sys.path.insert(0,proj_root)
+############################
 
 import numpy as np
 import torch as th
@@ -220,3 +228,4 @@ def main():  # noqa: C901
 
 if __name__ == "__main__":
     main()
+    sys.path.remove(proj_root)
