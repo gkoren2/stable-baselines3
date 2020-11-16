@@ -166,7 +166,7 @@ def get_latest_run_id(log_path: Optional[str] = None, log_name: str = "") -> int
     return max_run_id
 
 
-def configure_logger(
+def configure_logger_orig(
     verbose: int = 0, tensorboard_log: Optional[str] = None, tb_log_name: str = "", reset_num_timesteps: bool = True
 ) -> None:
     """
@@ -188,6 +188,19 @@ def configure_logger(
             logger.configure(save_path, ["tensorboard"])
     elif verbose == 0:
         logger.configure(format_strings=[""])
+
+def configure_logger(
+    verbose: int = 0, tensorboard_log: Optional[str] = None, tb_log_name: str = "", reset_num_timesteps: bool = True
+) -> None:
+    """
+    Note that it replaces the original configure_logger and doesnt do anything.
+    Everything is done in the context of the experiment using ScopedOutputConfig context manager
+
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param tensorboard_log: the log location for tensorboard (if None, no logging)
+    :param tb_log_name: tensorboard log
+    """
+    pass
 
 
 def check_for_correct_spaces(env: GymEnv, observation_space: gym.spaces.Space, action_space: gym.spaces.Space) -> None:

@@ -586,6 +586,13 @@ class Logger(object):
         for _format in self.output_formats:
             _format.close()
 
+    def add_output_formats(self,output_formats):
+        _ = [self.output_formats.append(f) for f in output_formats if f not in self.output_formats]
+
+    def remove_output_formats(self,output_formats):
+        _ = [self.output_formats.remove(f) for f in output_formats if f in self.output_formats]
+
+
     # Misc
     # ----------------------------------------
     def _do_log(self, args) -> None:
@@ -630,6 +637,7 @@ def configure(folder: Optional[str] = None, format_strings: Optional[List[str]] 
     log(f"Logging to {folder}")
 
 
+
 def reset() -> None:
     """
     reset the current logger
@@ -663,6 +671,32 @@ class ScopedConfigure(object):
     def __exit__(self, *args) -> None:
         Logger.CURRENT.close()
         Logger.CURRENT = self.prev_logger
+
+
+class ScopedOutputConfig(object):
+    def __init__(self, folder=None, format_strs=None,log_suffix=''):
+        """
+        Class for using context manager while logging
+        it adds output format (each with its own folder) to the current logger and then remove them
+        usage:
+        with ScopedOutputConfig(folder=None, format_strs=None,log_suffix=''):
+            {code}
+
+        :param folder: (str) the logging folder
+        :param format_strs: ([str]) the list of output logging format
+        """
+        self.dir = folder
+        self.format_strs = format_strs
+        self.log_suffix=log_suffix
+        self.added_output_formats = None
+
+    def __enter__(self):
+        self.prev_logger = Logger.CURRENT
+        self.added_output_formats = [make_output_format(f, self.dir, self.log_suffix) for f in self.format_strs]
+        Logger.CURRENT.add_output_formats(self.added_output_formats)
+
+    def __exit__(self, *args):
+        Logger.CURRENT.remove_output_formats(self.added_output_formats)
 
 
 # ================================================================
