@@ -78,17 +78,7 @@ def run_experiment(experiment_params):
                 exp_manager.learn(model)
                 exp_manager.save_trained_model(model)
             if experiment_params.expert_steps_to_record > 0:
-                exp_agent_algo = algo
-                exp_buf_filename = 'er_' + experiment_params.env_params.env_id + '_' + exp_agent_algo + '_' + str(
-                    experiment_params.expert_steps_to_record)
-                exp_buf_filename = os.path.join(output_dir, exp_buf_filename)
-                if experiment_params.env_params.env_id == "DTTSim":  # if DTTSim, turn on esif logging
-                    experiment_params.env_params.log_output = output_dir
-                exp_env = env_make(1, experiment_params.env_params, algo, seed)
-                logger.info('Generating expert experience buffer with ' + exp_agent_algo)
-                _ = generate_experience_traj(model, save_path=exp_buf_filename, env=exp_env,
-                                             n_timesteps_record=experiment_params.expert_steps_to_record)
-
+                exp_manager.rollout_on_env(model)
         else:
             exp_manager.hyperparameters_optimization()
 
