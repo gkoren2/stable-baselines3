@@ -158,14 +158,7 @@ class OnlEvalTBCallback(EvalCallback):
     def _on_step(self) -> bool:
         # Log additional tensor
         Result = super(OnlEvalTBCallback,self)._on_step()
-        # the following code is to log additional *tensorflow tensor* in tensorboard
-        # if not self.is_tb_set:
-        #     with self.model.graph.as_default():
-        #         tf.summary.scalar('onl_eval_mean_reward', self.last_mean_reward)
-        #         self.model.summary = tf.summary.merge_all()
-        #     self.is_tb_set = True
-        # Log scalar value that is not a tensorflow tensor (here a random variable)
-        if self.eval_freq > 0 and self.n_calls % self.eval_freq == 0:
+        if (self.eval_freq > 0) and (self.n_calls % self.eval_freq == 0):
             if self.logger_verbose > 0:
                 logger.info("Eval num_timesteps={}, "
                       "episode_reward={:.2f}".format(self.num_timesteps, self.last_mean_reward))

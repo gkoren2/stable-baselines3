@@ -4,20 +4,13 @@ import numpy as np
 from experiment.envs.dtt_env import BENCHMARKS,PLATFORMS
 from experiment.utils import ALGOS
 ALGO_IDS = list(ALGOS.keys())
-
+from experiment.envs.import_envs import CC_ENVS
 #############################
 # Env Defaults
 
-CC_ENVS = {'cartpole':'CartPole-v0',
-           'cartpole1':'CartPole-v1',
-           'mntcar':'MountainCar-v0',
-           'acrobot':'Acrobot-v1',
-           'lunland':'LunarLander-v2'
-           }
-
 class EnvParams:
     def __init__(self,env_id='cartpole'):
-        self.env_id=env_id
+        self.env_id=CC_ENVS.get(env_id,env_id)
         # self.normalize = False      # can also be "{'norm_obs': True, 'norm_reward': False}"
         # consider dropping normalize and use the below directly
         self.norm_obs = False
@@ -25,6 +18,7 @@ class EnvParams:
 
         self.env_wrapper = None     # see utils.wrappers
         self.frame_stack = 1        # 1 = no stack , >1 means how many frames to stack
+        self.env_kwargs = {}
 
     def as_dict(self):
         return vars(self)
@@ -459,7 +453,10 @@ class ExperimentParams:
         self.off_policy_eval_dataset_eval_fraction = 0      # fraction of the data that will be used for evaluation
                                                             # the rest will be used for training the agent and the reward model
 
+        self.checkpoint_save_freq = -1              # Save the model every n steps (if negative, no checkpoint)
 
+        self.truncate_last_trajectory = True    # When using HER with online sampling the last trajectory in the
+                                                # replay buffer will be truncated after reloading the replay buffer.
 
         ###### BatchRL #######
         self.expert_model_file = None           # path to expert to generate experience for batch rl (if experience_dataset is not provided)
@@ -477,11 +474,15 @@ class ExperimentParams:
 
 
         ###### Hyper Parameters Optimization ######
-        self.hp_optimize = False
-        self.n_trials = 10
-        self.n_jobs = 1
-        self.hpopt_sampler = 'tpe'
-        self.hpopt_pruner = 'median'
+        self.hpopt_on = False           # whether to perform hyperparameters optimization
+        self.hpopt_storage = None       # Database storage path if distributed optimization should be used
+        self.hpopt_n_trials = 10          # maximum number of trials for finding the best hyperparams
+        self.hpopt_n_jobs = 1           # number of parallel jobs when doing hyperparameter search
+        self.hpopt_sampler = 'tpe'      # Sampler to use when optimizing hyperparameters (["random", "tpe", "skopt"])
+        self.hpopt_pruner = 'median'    # Pruner to use when optimizing hyperparameters (["halving", "median", "none"])
+        self.hpopt_n_startup_trials = 10      # Number of trials before using optuna sampler
+        self.hpopt_n_evaluations = 20         # Number of evaluations for hyperparameter optimization
+        self.hpopt_study_name = None          # Study name for distributed optimization
 
     def as_dict(self):
         return vars(self)

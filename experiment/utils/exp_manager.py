@@ -31,7 +31,7 @@ from stable_baselines3.common.vec_env.obs_dict_wrapper import ObsDictWrapper
 from torch import nn as nn  # noqa: F401
 
 # Register custom envs
-import utils.import_envs  # noqa: F401 pytype: disable=import-error
+import experiment.envs.import_envs  # noqa: F401 pytype: disable=import-error
 from experiment.utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, OnlEvalTBCallback
 from experiment.utils.hyperparams_opt import HYPERPARAMS_SAMPLER
 from experiment.utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule,\
@@ -55,7 +55,8 @@ class ExperimentManager(object):
         self.output_dir = os.path.join(self.experiment_params.output_root_dir,str(self.experiment_params.seed))
 
         self.algo = self.experiment_params.agent_params.algorithm
-        self.env_id = self.experiment_params.env_params.env_id
+        env_id = self.experiment_params.env_params.env_id
+        self.env_id = experiment.envs.import_envs.CC_ENVS.get(env_id,env_id)
         # Custom params
         self.custom_hyperparams = None
         self.env_kwargs = self.experiment_params.env_params.env_kwargs
@@ -76,37 +77,37 @@ class ExperimentManager(object):
         self.n_actions = None  # For DDPG/TD3 action noise objects
         self._hyperparams = {}
 
-        self.trained_agent = self.experiment_params.trained_agent_model_file
+        self.trained_agent = self.experiment_params.trained_agent_model_file or ""
         self.continue_training = self.trained_agent.endswith(".zip") and os.path.isfile(self.trained_agent)
         self.truncate_last_trajectory = self.experiment_params.truncate_last_trajectory
 
         self._is_atari = self.is_atari(self.env_id)
         # Hyperparameter optimization config
-        self.optimize_hyperparameters = self.experiment_params.hpopt_params.do_hpopt
+        self.optimize_hyperparameters = self.experiment_params.hpopt_on
         # Database storage path if distributed optimization should be used
-        self.storage = self.experiment_params.hpopt_params.storage
+        self.storage = self.experiment_params.hpopt_storage
         # Study name for distributed optimization
-        self.study_name = self.experiment_params.hpopt_params.study_name
+        self.study_name = self.experiment_params.hpopt_study_name
         # maximum number of trials for finding the best hyperparams
-        self.n_trials = self.experiment_params.hpopt_params.n_trials
+        self.n_trials = self.experiment_params.hpopt_n_trials
         # number of parallel jobs when doing hyperparameter search
-        self.n_jobs = self.experiment_params.hpopt_params.n_jobs
+        self.n_jobs = self.experiment_params.hpopt_n_jobs
         # Sampler to use when optimizing hyperparameters (["random", "tpe", "skopt"])
-        self.sampler = self.experiment_params.hpopt_params.sampler
+        self.sampler = self.experiment_params.hpopt_sampler
         # Pruner to use when optimizing hyperparameters
-        self.pruner = self.experiment_params.hpopt_params.pruner
+        self.pruner = self.experiment_params.hpopt_pruner
         # Number of trials before using optuna sampler
-        self.n_startup_trials = self.experiment_params.hpopt_params.n_startup_trials
+        self.n_startup_trials = self.experiment_params.hpopt_n_startup_trials
         # Number of evaluations for hyperparameter optimization
-        self.n_evaluations = self.experiment_params.hpopt_params.n_evaluations
-        self.deterministic_eval = not self.is_atari(self.env_id)
+        self.n_evaluations = self.experiment_params.hpopt_n_evaluations
+        self.deterministic_eval = not self._is_atari
 
         # number of steps to record from the expert model
         self.expert_steps_to_record = self.experiment_params.expert_steps_to_record
 
         # Logging
-        self.log_folder = self.experiment_params.output_dir
-        self.tensorboard_log = self.experiment_params.output_dir if self.experiment_params.log_tensorboard else None
+        self.log_folder = self.output_dir
+        self.tensorboard_log = self.output_dir if self.experiment_params.log_tensorboard else None
         self.verbose = self.experiment_params.verbose
         self.args = None
         self.log_interval = self.experiment_params.log_interval
@@ -125,13 +126,12 @@ class ExperimentManager(object):
 
         :return: the initialized RL model
         """
-        os.makedirs(self.output_dir, exist_ok=True)
+        self.create_log_folder()
         agent_hyperparams, env_params, saved_hyperparams = self.read_hyperparameters()
         agent_hyperparams, self.callbacks = self._preprocess_agent_hyperparams(agent_hyperparams)
 
         self.env_wrapper = self._preprocess_env_params(env_params)
 
-        self.create_log_folder()
         self.create_callbacks()
 
         # Create env to have access to action space for action noise
@@ -146,13 +146,7 @@ class ExperimentManager(object):
             return None
         else:
             # Train an agent from scratch
-            model = ALGOS[self.algo](
-                env=env,
-                tensorboard_log=self.tensorboard_log,
-                seed=self.seed,
-                verbose=self.verbose,
-                **self._hyperparams,
-            )
+            model = ALGOS[self.algo](env=env, **self._hyperparams)
 
         self._save_config(saved_hyperparams)
         return model
@@ -188,8 +182,9 @@ class ExperimentManager(object):
 
         :param model:
         """
-        logger.info(f"Saving to {self.save_path}")
-        model.save(self.save_path)
+        model_file_name = os.path.join(self.save_path,'final_model')
+        logger.info(f"Saving to {model_file_name}")
+        model.save(model_file_name)
 
         if hasattr(model, "save_replay_buffer") and self.save_replay_buffer:
             logger.info("Saving replay buffer")
@@ -263,6 +258,10 @@ class ExperimentManager(object):
         if "callback" in agent_hyperparams.keys():
             del agent_hyperparams["callback"]
 
+        agent_hyperparams['tensorboard_log'] = self.tensorboard_log
+
+        del agent_hyperparams['algorithm']
+
         return agent_hyperparams, callbacks
 
     def create_envs(self, n_envs: int, eval_env: bool = False, no_log: bool = False) -> VecEnv:
@@ -281,7 +280,7 @@ class ExperimentManager(object):
         # env = SubprocVecEnv([make_env(env_id, i, self.seed) for i in range(n_envs)])
         # On most env, SubprocVecEnv does not help and is quite memory hungry
         env = make_vec_env(
-            env_id=self.experiment_params.env_params.env_id,
+            env_id=self.env_id,
             n_envs=n_envs,
             seed=self.experiment_params.seed,
             env_kwargs=self.experiment_params.env_params.env_kwargs,
@@ -510,9 +509,9 @@ class ExperimentManager(object):
             yaml.dump(saved_hyperparams, f)
 
         # save command line arguments
-        with open(os.path.join(self.params_path, "args.yml"), "w") as f:
-            ordered_args = OrderedDict([(key, vars(self.args)[key]) for key in sorted(vars(self.args).keys())])
-            yaml.dump(ordered_args, f)
+        # with open(os.path.join(self.params_path, "args.yml"), "w") as f:
+        #     ordered_args = OrderedDict([(key, vars(self.args)[key]) for key in sorted(vars(self.args).keys())])
+        #     yaml.dump(ordered_args, f)
 
         logger.info(f"Log path: {self.save_path}")
 

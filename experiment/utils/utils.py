@@ -375,8 +375,8 @@ def online_eval_results_analysis(npz_filename):
     eval_df = pd.DataFrame(eval_dict)
     eval_df.set_index('timesteps',inplace=True)
     # save csv filename
-    # df_filename = os.path.splitext(npz_filename)[0]+'.csv'
-    # eval_df.to_csv(df_filename)
+    df_filename = os.path.splitext(npz_filename)[0]+'.csv'
+    eval_df.to_csv(df_filename)
     return eval_df
 
 def generate_experience_traj(model, save_path=None, env=None, n_timesteps_train=0,
