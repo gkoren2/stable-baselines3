@@ -255,6 +255,29 @@ class ReplayBuffer(BaseBuffer):
         )
         return ReplayBufferSamples(*tuple(map(self.to_torch, data)))
 
+    def record_buffer(self) -> dict:
+        batch_inds = np.arange(self.buffer_size) if self.full else np.arange(self.pos)
+        if self.optimize_memory_usage:
+            next_obs = self._normalize_obs(self.observations[(batch_inds + 1) % self.buffer_size, 0, :])
+        else:
+            next_obs = self._normalize_obs(self.next_observations[batch_inds, 0, :])
+        obs = self._normalize_obs(self.observations[batch_inds, 0, :])
+        n_samples = len(obs)
+        rewards = self._normalize_reward(self.rewards[batch_inds])
+        data = {
+            'actions': self.actions[batch_inds, 0, :],
+            'obs': obs,
+            'rewards': rewards,
+            'obs_tp1': next_obs,
+            'dones': self.dones[batch_inds],
+            'infos': np.array([{}]*n_samples),      # not supporting info yet...
+            'episode_returns': rewards,
+            'episode_starts': np.ones((n_samples,))
+        }
+        return data
+
+
+
 
 class RolloutBuffer(BaseBuffer):
     """

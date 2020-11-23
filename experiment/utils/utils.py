@@ -7,10 +7,13 @@ import pandas as pd
 import numpy as np
 import gym
 import yaml
+from tqdm import tqdm
+from stable_baselines3.common.base_class import BaseAlgorithm
 from stable_baselines3 import A2C, DDPG, DQN, HER, PPO, SAC, TD3
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecFrameStack, VecNormalize
+from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common import logger
 try:
     from sb3_contrib import TQC  # pytype: disable=import-error
@@ -32,6 +35,33 @@ ALGOS = {
 
 if TQC is not None:
     ALGOS["tqc"] = TQC
+
+class UniformRandomModel(object):
+    def __init__(self,env):
+        self.env = None
+        self.set_env(env)
+
+    def predict(self,obs,with_prob=False):
+        action = self.env.action_space.sample()
+        if with_prob:
+            act_prob = np.array([1.0 / self.env.action_space.n] * self.env.action_space.n)
+            return action, act_prob
+        else:
+            return action
+
+    def get_env(self)-> Optional[VecEnv]:
+        return self.env
+
+    def set_env(self,env):
+        self.env = env
+        assert hasattr(self.env,'action_space') and hasattr(self.env.action_space,'sample'), "env doesnt support sample"
+        assert isinstance(self.env.action_space,gym.spaces.Discrete), "currently supporting only discrete action space"
+
+
+
+ALGOS.update({'random':UniformRandomModel})
+
+
 
 def title(msg,n,ch='='):
     return "\n\n"+ch*n+" "+msg+" "+ch*n
@@ -379,60 +409,33 @@ def online_eval_results_analysis(npz_filename):
     eval_df.to_csv(df_filename)
     return eval_df
 
-def generate_experience_traj(model, save_path=None, env=None, n_timesteps_train=0,
-                         n_timesteps_record=100000,deterministic=True,with_prob=True):
+
+def generate_experience_traj(model, save_path=None, n_timesteps_record=100000,deterministic=True,with_prob=False):
     """
-    Train expert controller (if needed) and record expert trajectories.
-
-    .. note::
-
-        only Box and Discrete spaces are supported for now.
-        support in images is removed.
-
-    :param model: (RL model or callable) The expert model, if it needs to be trained,
-        then you need to pass ``n_timesteps > 0``.
-        note that the RL model can be also a pretrained expert that was loaded from file.
-    :param save_path: (str) Path without the extension where the expert dataset will be saved
-        (ex: 'expert_cartpole' -> creates 'expert_cartpole.npz').
-        If not specified, it will not save, and just return the generated expert trajectories.
-        This parameter must be specified for image-based environments.
-    :param env: (gym.Env) The environment, if not defined then it tries to use the model
-        environment.
-    :param n_timesteps_train: (int) Number of training timesteps
-    :param n_timesteps_record: (int) Number of trajectories (episodes) to record
-    :param logger: (Logger) - if not None, use it for verbose output
-    :return: (dict) the generated expert trajectories.
+    record expert trajectories and save to file
     """
-
     # Retrieve the environment using the RL model
-    if env is None and isinstance(model, BaseRLModel):
-        env = model.get_env()
+    env = model.get_env()
 
     assert env is not None, "You must set the env in the model or pass it to the function."
 
     is_vec_env = False
-    if isinstance(env, VecEnv) and not isinstance(env, _UnvecWrapper):
+    if isinstance(env, VecEnv):
         is_vec_env = True
         if env.num_envs > 1:
-            warnings.warn("You are using multiple envs, only the data from the first one will be recorded.")
+            logger.warn("You are using multiple envs, only the data from the first one will be recorded.")
 
     # Sanity check
-    assert (isinstance(env.observation_space, spaces.Box) or
-            isinstance(env.observation_space, spaces.Discrete)), "Observation space type not supported"
+    assert (isinstance(env.observation_space, gym.spaces.Box) or
+            isinstance(env.observation_space, gym.spaces.Discrete)), "Observation space type not supported"
 
-    assert (isinstance(env.action_space, spaces.Box) or
-            isinstance(env.action_space, spaces.Discrete)), "Action space type not supported"
+    assert (isinstance(env.action_space, gym.spaces.Box) or
+            isinstance(env.action_space, gym.spaces.Discrete)), "Action space type not supported"
 
     # Note: support in recording image to files is omitted
-    obs_space = env.observation_space
-    replay_buffer = ReplayBuffer(n_timesteps_record)
+    replay_buffer = ReplayBuffer(n_timesteps_record,env.observation_space,env.action_space)
 
     logger.info(title("generate expert trajectory",20))
-
-    if n_timesteps_train > 0 and isinstance(model, BaseRLModel):
-        logger.info("training expert start - {0} timesteps".format(n_timesteps_train))
-        model.learn(n_timesteps_train,tb_log_name='exp_gen_train')
-        logger.info("generate expert trajectory: training expert end")
 
 
     logger.info("start recording {0} expert steps".format(n_timesteps_record))
@@ -448,37 +451,37 @@ def generate_experience_traj(model, save_path=None, env=None, n_timesteps_train=
     if is_vec_env:
         mask = [True for _ in range(env.num_envs)]
     for t in tqdm(range(n_timesteps_record)):
-        info={}
-        if isinstance(model, BaseRLModel):
-            if with_prob:
-                action, state, act_prob = model.predict(obs, state=state, mask=mask,deterministic=deterministic,with_prob=True)
-                # info.update({'all_action_probabilities': str(act_prob)})
-                info.update({'all_action_probabilities': act_prob})
-            else:       # default is with_prob=False
-                action, state = model.predict(obs, state=state, mask=mask,deterministic=deterministic)
+        action_info={}     # extra info on top of what we get from the env
+        if isinstance(model, BaseAlgorithm):
+            if with_prob:       # not supported yet
+                # action, state, act_prob = model.predict(obs, state=state, mask=mask,deterministic=deterministic,with_prob=True)
+                logger.warn("not supporting with_prob in model.predict")
+                # info.update({'all_action_probabilities': act_prob})
+            # else:       # default is with_prob=False
+            action, state = model.predict(obs, state=state, mask=mask,deterministic=deterministic)
         else:   # random agent that samples uniformly
             if with_prob:
-                assert isinstance(env.action_space,gym.spaces.Discrete), "currently supporting action prob in Discrete space only"
-                action,act_prob = model.predict(obs,with_prob=True)
-                # info.update({'all_action_probabilities': str(act_prob)})
-                info.update({'all_action_probabilities': act_prob})
-            else:
-                action = model.predict(obs)
+                logger.warn("not supporting with_prob in model.predict")
+                # assert isinstance(env.action_space,gym.spaces.Discrete), "currently supporting action prob in Discrete space only"
+                # action,act_prob = model.predict(obs,with_prob=True)
+                # info.update({'all_action_probabilities': act_prob})
+            # else:
+            action = model.predict(obs)
 
-        new_obs, reward, done, _ = env.step(action)
+        new_obs, reward, done, info = env.step(action)
 
         # Note : we save to the experience buffer as if it is not a vectorized env since anyway we
         #        use only first env
-
+        # info.update(action_info)
         if is_vec_env:
             mask = [done[0] for _ in range(env.num_envs)]
             action = np.array([action[0]])
             reward = np.array(reward[0])
             done = np.array([done[0]])
             info = np.array([info[0]])
-            replay_buffer.add(obs[0],action[0],reward,new_obs[0],float(done[0]),info[0])
+            replay_buffer.add(obs[0],new_obs[0],action[0],reward,done[0])     # currently ignoring the info
         else: # Store transition in the replay buffer.
-            replay_buffer.add(obs, action, reward, new_obs, float(done),info)
+            replay_buffer.add(obs, new_obs, action, reward,  done)   # currently ignoring the info
         obs = new_obs
         episode_starts.append(done)
         reward_sum += reward
@@ -502,8 +505,10 @@ def generate_experience_traj(model, save_path=None, env=None, n_timesteps_train=
     # assuming we save only the numpy arrays (not the obs_space and act_space)
     if save_path is not None:
         np.savez(save_path+'.npz', **numpy_dict)
-        logger.info("saving to experience as csv file: "+save_path+'.csv')
-        replay_buffer.save_to_csv(save_path+'.csv',os.path.splitext(os.path.basename(save_path))[0])
+        # logger.info("saving to experience as csv file: "+save_path+'.csv')
+        # replay_buffer.save_to_csv(save_path+'.csv',os.path.splitext(os.path.basename(save_path))[0])
 
     env.close()
     return numpy_dict
+
+

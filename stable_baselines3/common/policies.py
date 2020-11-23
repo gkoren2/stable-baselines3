@@ -242,6 +242,7 @@ class BasePolicy(BaseModel):
         state: Optional[np.ndarray] = None,
         mask: Optional[np.ndarray] = None,
         deterministic: bool = False,
+        with_prob: bool = False,        # not yet supported
     ) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """
         Get the policy action and state from an observation (and optional state).
@@ -302,6 +303,7 @@ class BasePolicy(BaseModel):
                 raise ValueError("Error: The environment must be vectorized when using recurrent policies.")
             actions = actions[0]
 
+        assert not with_prob,  "Currently not supporting probability"
         return actions, state
 
     def scale_action(self, action: np.ndarray) -> np.ndarray:

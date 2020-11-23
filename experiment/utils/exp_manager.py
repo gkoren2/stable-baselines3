@@ -127,28 +127,49 @@ class ExperimentManager(object):
         :return: the initialized RL model
         """
         self.create_log_folder()
-        agent_hyperparams, env_params, saved_hyperparams = self.read_hyperparameters()
-        agent_hyperparams, self.callbacks = self._preprocess_agent_hyperparams(agent_hyperparams)
 
-        self.env_wrapper = self._preprocess_env_params(env_params)
 
-        self.create_callbacks()
+        if self.n_timesteps <= 0:
+            # imitate what is done in enjoy
+            # prepare for environment creation
+            env_params = self.experiment_params.env_params.as_dict()
+            self.env_wrapper = self._preprocess_env_params(env_params)
+            # Create env to have access to action space for action noise
+            self.n_envs = self.experiment_params.n_envs
+            env = self.create_envs(self.n_envs, eval_env=True)
+            # load the model
+            if self.algo=='random':
+                model = ALGOS[self.algo](env)
+            else:
+                off_policy_algos = ["dqn", "ddpg", "sac", "her", "td3", "tqc"]
+                kwargs = dict(seed=self.seed)
+                if self.algo in off_policy_algos:
+                    # Dummy buffer size as we don't need memory to enjoy the trained agent
+                    kwargs.update(dict(buffer_size=1))
+                model = self._load_pretrained_agent(kwargs,env)
+        else:       # model needs to be trained or retrained
+            agent_hyperparams, env_params, saved_hyperparams = self.read_hyperparameters()
+            agent_hyperparams, self.callbacks = self._preprocess_agent_hyperparams(agent_hyperparams)
 
-        # Create env to have access to action space for action noise
-        self.n_envs = self.experiment_params.n_envs
-        env = self.create_envs(self.n_envs, no_log=False)
+            self.env_wrapper = self._preprocess_env_params(env_params)
 
-        self._hyperparams = self._preprocess_action_noise(agent_hyperparams, env)
+            self.create_callbacks()
 
-        if self.continue_training:
-            model = self._load_pretrained_agent(self._hyperparams, env)
-        elif self.optimize_hyperparameters:
-            return None
-        else:
-            # Train an agent from scratch
-            model = ALGOS[self.algo](env=env, **self._hyperparams)
+            # Create env to have access to action space for action noise
+            self.n_envs = self.experiment_params.n_envs
+            env = self.create_envs(self.n_envs, no_log=False)
 
-        self._save_config(saved_hyperparams)
+            self._hyperparams = self._preprocess_action_noise(agent_hyperparams, env)
+
+            if self.continue_training:
+                model = self._load_pretrained_agent(self._hyperparams, env)
+            elif self.optimize_hyperparameters:
+                return None
+            else:
+                # Train an agent from scratch
+                model = ALGOS[self.algo](env=env, **self._hyperparams)
+
+            self._save_config(saved_hyperparams)
         return model
 
 
@@ -198,11 +219,13 @@ class ExperimentManager(object):
         if experience_file_name=="":
             experience_file_name = 'er_'+self.env_id+'_'+self.algo+'_'+str(self.expert_steps_to_record)
         experience_file_name = os.path.join(self.save_path,experience_file_name)
-        if self.env_id=='DTTSim':
-            self.experiment_params.env_params.log_output = self.save_path
-        eval_env = self.create_envs(1,eval_env=True)
+        # if self.env_id=='DTTSim':
+        #     self.experiment_params.env_params.log_output = self.save_path
+        if self.n_timesteps>0:      # need to define eval env as the model.env was training env
+            eval_env = self.create_envs(1,eval_env=True)
+            model.set_env(eval_env)
         logger.info('Generating expert experience buffer with ' + self.algo)
-        _ = generate_experience_traj(model, save_path=experience_file_name, env=eval_env,
+        _ = generate_experience_traj(model, save_path=experience_file_name,
                                      n_timesteps_record=self.experiment_params.expert_steps_to_record)
         return
 
@@ -303,19 +326,19 @@ class ExperimentManager(object):
             n_stack = self.frame_stack
             env = VecFrameStack(env, n_stack)
             if self.verbose > 0:
-                print(f"Stacking {n_stack} frames")
+                logger.info(f"Stacking {n_stack} frames")
 
         # Wrap if needed to re-order channels
         # (switch from channel last to channel first convention)
         if is_image_space(env.observation_space):
             if self.verbose > 0:
-                print("Wrapping into a VecTransposeImage")
+                logger.info("Wrapping into a VecTransposeImage")
             env = VecTransposeImage(env)
 
         # check if wrapper for dict support is needed
         if self.algo == "her":
             if self.verbose > 0:
-                print("Wrapping into a ObsDictWrapper")
+                logger.info("Wrapping into a ObsDictWrapper")
             env = ObsDictWrapper(env)
 
         return env
@@ -471,7 +494,8 @@ class ExperimentManager(object):
         # Continue training
         logger.info("Loading pretrained agent")
         # Policy should not be changed
-        del hyperparams["policy"]
+        if "policy" in hyperparams.keys():
+            del hyperparams["policy"]
 
         if "policy_kwargs" in hyperparams.keys():
             del hyperparams["policy_kwargs"]
@@ -479,21 +503,19 @@ class ExperimentManager(object):
         model = ALGOS[self.algo].load(
             self.trained_agent,
             env=env,
-            seed=self.seed,
-            tensorboard_log=self.tensorboard_log,
-            verbose=self.verbose,
             **hyperparams,
         )
 
-        replay_buffer_path = os.path.join(os.path.dirname(self.trained_agent), "replay_buffer.pkl")
+        if self.n_timesteps > 0:        # loading the model to continue training
+            replay_buffer_path = os.path.join(os.path.dirname(self.trained_agent), "replay_buffer.pkl")
 
-        if os.path.exists(replay_buffer_path):
-            logger.info("Loading replay buffer")
-            if self.algo == "her":
-                # if we use HER we have to add an additional argument
-                model.load_replay_buffer(replay_buffer_path, self.truncate_last_trajectory)
-            else:
-                model.load_replay_buffer(replay_buffer_path)
+            if os.path.exists(replay_buffer_path):
+                logger.info("Loading replay buffer")
+                if self.algo == "her":
+                    # if we use HER we have to add an additional argument
+                    model.load_replay_buffer(replay_buffer_path, self.truncate_last_trajectory)
+                else:
+                    model.load_replay_buffer(replay_buffer_path)
         return model
 
 
