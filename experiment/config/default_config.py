@@ -60,7 +60,7 @@ class AgentParams:
         self.create_eval_env = False
         self._init_setup_model = True
         self.seed = None
-        self.policy_kwargs = False
+        self.policy_kwargs = None
         self.device = 'auto'
         return
 
@@ -133,36 +133,13 @@ class PPOAgentParams(AgentParams):
         self.gamma = 0.99
         self.gae_lambda = 0.95
         self.clip_range = 0.2
-        self.clip_range_vf = None
+        # self.clip_range_vf = None
         self.ent_coef = 0.0
         self.vf_coef = 0.5
         self.max_grad_norm = 0.5
         self.use_sde = False
         self.sde_sample_freq = -1
         self.target_kl = None
-
-
-        self.n_steps = 2048
-        self.nminibatches = 4
-        self.lam = 0.95
-        self.gamma = 0.99
-        self.noptepochs = 4
-        self.ent_coef = 0.0
-        self.learning_rate = 3e-4   # can also be 'lin_<float>' e.g. 'lin_0.001'
-        self.clip_range = 0.2        # can also be 'lin_<float>' e.g. 'lin_0.1'
-        self.vf_coef = 0.5
-        self.ent_coef = 0.0
-        self.clip_range_vf = None
-        self.max_grad_norm = 0.5
-        self.policy_kwargs = None
-        self.n_cpu_tf_sess = None
-
-        self.batch_size = 64
-        self.n_epochs = 10
-        self.gae_lambda = 0.95
-        self.use_sde = False
-        self.sde_sample_freq = -1
-        self.target_kl = None,
         return
 
 

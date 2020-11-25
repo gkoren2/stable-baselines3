@@ -36,8 +36,7 @@ agent_params.policy_kwargs = dict(net_arch=[256, 256])
 # Experiment                                             #
 ##########################################################
 experiment_params = ExperimentParams()
-# experiment_params.n_timesteps = 100000
-experiment_params.n_timesteps = 10000
+experiment_params.n_timesteps = 100000
 experiment_params.env_params = env_params
 experiment_params.agent_params = agent_params
 experiment_params.expert_steps_to_record = 100000  # number of episodes to record into the experience buffer
