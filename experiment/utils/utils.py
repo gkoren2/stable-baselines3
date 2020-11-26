@@ -45,9 +45,9 @@ class UniformRandomModel(object):
         action = self.env.action_space.sample()
         if with_prob:
             act_prob = np.array([1.0 / self.env.action_space.n] * self.env.action_space.n)
-            return action, act_prob
+            return [action], act_prob
         else:
-            return action
+            return [action]
 
     def get_env(self)-> Optional[VecEnv]:
         return self.env
