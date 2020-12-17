@@ -18,7 +18,7 @@ from stable_baselines3.common.save_util import load_from_pkl, save_to_pkl
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn
 from stable_baselines3.common.utils import safe_mean
 from stable_baselines3.common.vec_env import VecEnv
-
+from stable_baselines3.common.dataset import ExperienceDataset      # offline RL
 
 class OffPolicyAlgorithm(BaseAlgorithm):
     """
@@ -88,6 +88,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         action_noise: Optional[ActionNoise] = None,
         optimize_memory_usage: bool = False,
         policy_kwargs: Dict[str, Any] = None,
+        buffer_train_fraction: float = 1.0,
         tensorboard_log: Optional[str] = None,
         verbose: int = 0,
         device: Union[th.device, str] = "auto",
@@ -151,6 +152,12 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         # For gSDE only
         self.use_sde_at_warmup = use_sde_at_warmup
 
+        # for future support in pretrain (using imitation learning)
+        self.pretrain_epochs = 0        # 0 means no pretraining
+        # for offline RL
+        self.experience_dataset = None
+        self.buffer_train_fraction = buffer_train_fraction
+
     def _setup_model(self) -> None:
         self._setup_lr_schedule()
         self.set_random_seed(self.seed)
@@ -187,6 +194,17 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         """
         self.replay_buffer = load_from_pkl(path, self.verbose)
         assert isinstance(self.replay_buffer, ReplayBuffer), "The replay buffer must inherit from ReplayBuffer class"
+
+
+    def load_expert_buf(self,experience_buf: Dict[str,Any]) -> None:
+        self.experience_dataset = experience_buf.copy()
+        if self.experience_dataset:
+            # todo: add self.device so that we can return the samples accordingly (as done in replay buffer)
+            self.experience_dataset = ExperienceDataset(traj_data=self.experience_dataset,train_fraction=self.buffer_train_fraction,
+                                             batch_size=self.batch_size,sequential_preprocessing=True,device=self.device)
+            self.replay_buffer = None       # if we have expert buffer (offline RL) we dont need replay buf
+        return
+
 
     def _setup_learn(
         self,
@@ -350,6 +368,9 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         but can be used for other purposes
         """
         pass
+
+    def _excluded_save_params(self) -> List[str]:
+        return super(OffPolicyAlgorithm, self)._excluded_save_params() + ["experience_dataset"]
 
     def collect_rollouts(
         self,

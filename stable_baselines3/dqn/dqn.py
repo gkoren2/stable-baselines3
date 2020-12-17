@@ -74,6 +74,7 @@ class DQN(OffPolicyAlgorithm):
         exploration_initial_eps: float = 1.0,
         exploration_final_eps: float = 0.05,
         max_grad_norm: float = 10,
+        buffer_train_fraction = 1.0,
         tensorboard_log: Optional[str] = None,
         create_eval_env: bool = False,
         policy_kwargs: Optional[Dict[str, Any]] = None,
@@ -98,6 +99,7 @@ class DQN(OffPolicyAlgorithm):
             n_episodes_rollout,
             action_noise=None,  # No action noise
             policy_kwargs=policy_kwargs,
+            buffer_train_fraction=buffer_train_fraction,
             tensorboard_log=tensorboard_log,
             verbose=verbose,
             device=device,
@@ -222,18 +224,29 @@ class DQN(OffPolicyAlgorithm):
         eval_log_path: Optional[str] = None,
         reset_num_timesteps: bool = True,
     ) -> OffPolicyAlgorithm:
-
-        return super(DQN, self).learn(
-            total_timesteps=total_timesteps,
-            callback=callback,
-            log_interval=log_interval,
-            eval_env=eval_env,
-            eval_freq=eval_freq,
-            n_eval_episodes=n_eval_episodes,
-            tb_log_name=tb_log_name,
-            eval_log_path=eval_log_path,
-            reset_num_timesteps=reset_num_timesteps,
-        )
+        # consider moving the below logic into super(DQN,self).learn(...)
+        if self.experience_dataset:     # offline RL
+            return self._learn_from_static_buffer(total_timesteps=total_timesteps,
+                                           callback=callback,
+                                           log_interval=log_interval,
+                                           eval_env=eval_env,
+                                           eval_freq=eval_freq,
+                                           n_eval_episodes=n_eval_episodes,
+                                           tb_log_name=tb_log_name,
+                                           eval_log_path=eval_log_path,
+                                           reset_num_timesteps=reset_num_timesteps,)
+        else:
+            return super(DQN, self).learn(
+                total_timesteps=total_timesteps,
+                callback=callback,
+                log_interval=log_interval,
+                eval_env=eval_env,
+                eval_freq=eval_freq,
+                n_eval_episodes=n_eval_episodes,
+                tb_log_name=tb_log_name,
+                eval_log_path=eval_log_path,
+                reset_num_timesteps=reset_num_timesteps,
+            )
 
     def _excluded_save_params(self) -> List[str]:
         return super(DQN, self)._excluded_save_params() + ["q_net", "q_net_target"]
@@ -242,3 +255,99 @@ class DQN(OffPolicyAlgorithm):
         state_dicts = ["policy", "policy.optimizer"]
 
         return state_dicts, []
+
+
+    def _train_on_batch(self,observations,next_observations,actions,rewards,dones):
+        losses = []
+        with th.no_grad():
+            # Compute the target Q values
+            target_q = self.q_net_target(next_observations)
+            # Follow greedy policy: use the one with the highest value
+            target_q, _ = target_q.max(dim=1)
+            # Avoid potential broadcast issue
+            target_q = target_q.reshape(-1, 1)
+            # 1-step TD target
+            target_q = rewards + (1 - dones) * self.gamma * target_q
+
+        # Get current Q estimates
+        current_q = self.q_net(observations)
+
+        # Retrieve the q-values for the actions from the replay buffer
+        current_q = th.gather(current_q, dim=1, index=actions.long())
+
+        # Compute Huber loss (less sensitive to outliers)
+        loss = F.smooth_l1_loss(current_q, target_q)
+        losses.append(loss.item())
+
+        # Optimize the policy
+        self.policy.optimizer.zero_grad()
+        loss.backward()
+        # Clip gradient norm
+        th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+        self.policy.optimizer.step()
+        # Increase update counter
+        self._n_updates += 1
+
+        logger.record("train_ofl/n_updates", self._n_updates, exclude="tensorboard")
+        logger.record("train_ofl/loss", np.mean(losses))
+        return losses
+
+
+    def _learn_from_static_buffer(self,
+                                  total_timesteps: int,
+                                  callback: MaybeCallback = None,
+                                  log_interval: int = 10,
+                                  eval_env: Optional[GymEnv] = None,
+                                  eval_freq: int = -1,
+                                  n_eval_episodes: int = 5,
+                                  tb_log_name: str = "run",
+                                  eval_log_path: Optional[str] = None,
+                                  reset_num_timesteps: bool = True,
+                                  ) -> "OffPolicyAlgorithm":
+        # todo: consider having a dedicated _setup_learn for offline rl. (only if necessary)
+        total_timesteps, callback = self._setup_learn(
+            total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
+        )
+
+        iter_cnt = 0  # iterations counter
+        ts = 0
+        epoch = 0  # epochs counter
+        mean_reward = None
+        last_updadte_target_ts = 0
+        n_minibatches = len(self.experience_dataset.train_loader)
+
+        callback.on_training_start(locals(), globals())
+        while ts < total_timesteps:
+            # Update learning rate according to schedule
+            self._update_learning_rate(self.policy.optimizer)
+            tot_epoch_loss=0
+            for _ in range(n_minibatches):
+                obs, next_obs, actions, rewards, dones = self.experience_dataset.get_next_batch('train')
+                losses = self._train_on_batch(obs, next_obs, actions, rewards, dones)
+                # update counters
+                self.num_timesteps += len(obs)
+                iter_cnt += 1
+                ts += len(obs)
+                tot_epoch_loss += np.mean(losses)
+                # in offline rl, the step is training step done on a minibatch of samples.
+                if callback.on_step() is False:
+                    break
+
+
+            epoch += 1  # inc
+            # finished going through the data. summarize the epoch:
+            avg_epoch_loss = tot_epoch_loss / n_minibatches
+            # # should_update_target = ((ts-last_updadte_target_ts)>self.target_network_update_freq)
+            # should_update_target = ((epoch % self.target_network_update_freq) == 0)
+            # if should_update_target:
+            #     # Update target network periodically.
+            #     self.update_target(sess=self.sess)
+            #     last_updadte_target_ts = ts
+
+            # update the target network every target_update_interval epochs
+            # tau=1 for hard update
+            if epoch % self.target_update_interval == 0:
+                polyak_update(self.q_net.parameters(), self.q_net_target.parameters(), self.tau)
+
+        callback.on_training_end()
+        return self

@@ -1,11 +1,12 @@
 import warnings
 from abc import ABC, abstractmethod
 from typing import Dict, Generator, Optional, Union
-
+import ast
 import numpy as np
 import torch as th
 from gym import spaces
-
+import pandas as pd
+from tqdm import tqdm
 try:
     # Check memory used by replay buffer when possible
     import psutil
@@ -15,6 +16,8 @@ except ImportError:
 from stable_baselines3.common.preprocessing import get_action_dim, get_obs_shape
 from stable_baselines3.common.type_aliases import ReplayBufferSamples, RolloutBufferSamples
 from stable_baselines3.common.vec_env import VecNormalize
+
+from stable_baselines3.common import logger
 
 
 class BaseBuffer(ABC):
@@ -186,6 +189,7 @@ class ReplayBuffer(BaseBuffer):
         self.actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=action_space.dtype)
         self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.dones = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.infos = np.array([[{} for _ in range(self.n_envs)] for _ in range(self.buffer_size)])
 
         if psutil is not None:
             total_memory_usage = self.observations.nbytes + self.actions.nbytes + self.rewards.nbytes + self.dones.nbytes
@@ -201,7 +205,7 @@ class ReplayBuffer(BaseBuffer):
                     f"replay buffer {total_memory_usage:.2f}GB > {mem_available:.2f}GB"
                 )
 
-    def add(self, obs: np.ndarray, next_obs: np.ndarray, action: np.ndarray, reward: np.ndarray, done: np.ndarray) -> None:
+    def add(self, obs: np.ndarray, next_obs: np.ndarray, action: np.ndarray, reward: np.ndarray, done: np.ndarray, info: Optional[np.ndarray] = None) -> None:
         # Copy to avoid modification by reference
         self.observations[self.pos] = np.array(obs).copy()
         if self.optimize_memory_usage:
@@ -212,6 +216,8 @@ class ReplayBuffer(BaseBuffer):
         self.actions[self.pos] = np.array(action).copy()
         self.rewards[self.pos] = np.array(reward).copy()
         self.dones[self.pos] = np.array(done).copy()
+        if info:
+            self.infos[self.pos] = np.array(info).copy()
 
         self.pos += 1
         if self.pos == self.buffer_size:
@@ -265,17 +271,72 @@ class ReplayBuffer(BaseBuffer):
         n_samples = len(obs)
         rewards = self._normalize_reward(self.rewards[batch_inds])
         data = {
-            'actions': self.actions[batch_inds, 0, :],
             'obs': obs,
+            'next_obs': next_obs,
+            'actions': self.actions[batch_inds, 0, :],
             'rewards': rewards,
-            'obs_tp1': next_obs,
             'dones': self.dones[batch_inds],
-            'infos': np.array([{}]*n_samples),      # not supporting info yet...
+            'infos': self.infos[batch_inds],
             'episode_returns': rewards,
             'episode_starts': np.ones((n_samples,))
         }
         return data
 
+    def load_from_csv(self,filename) -> tuple:
+        '''
+        load_from_csv loads the replay buffer from csv to self._storage
+        it expects the csv to have the following columns :
+        'action' [str/int/float]- the action that was taken. if not scalar, will be fed as string to evaluate)
+        'all_action_probabilities' [str] - the probabilities of the possible actions (what happens in continuous action ?)
+        'episode_name' [str] - the name of the episode
+        'episode_id' [int] - episode ID. (integer index )
+        'reward' [float]- r_(t+1)
+        'transition_number' - step index (t)
+        'state_feature_i' [float] - element in the state vector (i starts from 0 to obs_dim-1)
+
+        :param filename: name of the csv file
+        :return:
+        '''
+        self.reset()
+        try:
+            df=pd.read_csv(filename)
+        except FileNotFoundError:
+            raise FileNotFoundError('Could not find '+filename)
+        self.buffer_size = max(self.buffer_size,len(df))
+
+        episode_returns = []
+        episode_starts = [1]
+        episode_ids = df['episode_id'].unique()
+        state_columns = [col for col in df.columns if col.startswith('state_feature')]
+        for e_id_i in tqdm(range(len(episode_ids))):
+            # progress_bar.update(e_id)
+            e_id = episode_ids[e_id_i]
+            df_episode_transitions = df[df['episode_id'] == e_id]
+            if len(df_episode_transitions) < 2:
+                # we have to have at least 2 rows in each episode for creating a transition
+                logger.warn('dropped short episode {0}'.format(e_id))
+                continue
+            transitions = []
+            for (_, current_transition), (_, next_transition) in zip(df_episode_transitions[:-1].iterrows(),
+                                                                     df_episode_transitions[1:].iterrows()):
+                obs = np.array([current_transition[col] for col in state_columns])
+                next_obs = np.array([next_transition[col] for col in state_columns])
+                action = np.array(int(current_transition['action']))
+                reward = np.array(current_transition['reward'])
+                info = np.array({'all_action_probabilities':ast.literal_eval(current_transition['all_action_probabilities'])})
+                transitions.append({'obs':obs,'next_obs':next_obs,'action':action,'reward':reward,'done':np.array(False),'info':info})
+                # # currently not yet supporting info.
+                # transitions.append({'obs_t':obs,'action':action,'reward':reward,'obs_tp1':obs_tp1,'done':0})
+            # set the done flag of the last transition to True
+            transitions[-1]['done']=np.array(True)
+            reward_sum = 0.0
+            for t in transitions:
+                self.add(**t)
+                reward_sum += t['reward']
+                episode_starts.append(t['done'])
+            episode_returns.append(reward_sum)
+        episode_starts=episode_starts[:-1]
+        return episode_starts,episode_returns
 
 
 

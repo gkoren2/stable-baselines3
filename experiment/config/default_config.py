@@ -78,14 +78,30 @@ class DQNAgentParams(AgentParams):
     Parameters for DQN agent
     The agent gets the following values in its construction:
     policy,env
-    gamma = 0.99, learning_rate = 5e-4, buffer_size = 50000, exploration_fraction = 0.1,
-    exploration_final_eps = 0.02, exploration_initial_eps = 1.0, train_freq = 1, batch_size = 32, double_q = True,
-    learning_starts = 1000, target_network_update_freq = 500, prioritized_replay = False,
-    prioritized_replay_alpha = 0.6, prioritized_replay_beta0 = 0.4, prioritized_replay_beta_iters = None,
-    prioritized_replay_eps = 1e-6, param_noise = False,
-
-    n_cpu_tf_sess = None, verbose = 0, tensorboard_log = None, _init_setup_model = True, policy_kwargs = None,
-    full_tensorboard_log = False, seed = None
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: The learning rate, it can be a function
+        of the current progress (from 1 to 0)
+    :param buffer_size: size of the replay buffer
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1) default 1 for hard update
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
+        (see ``train_freq`` and ``n_episodes_rollout``)
+        Set to ``-1`` means to do as many gradient steps as steps done in the environment
+        during the rollout.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
+        Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
+        at a cost of more complexity.
+        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
+    :param target_update_interval: update the target network every ``target_update_interval``
+        environment steps.
+    :param exploration_fraction: fraction of entire training period over which the exploration rate is reduced
+    :param exploration_initial_eps: initial value of random action probability
+    :param exploration_final_eps: final value of random action probability
     """
     def __init__(self):
         super(DQNAgentParams, self).__init__()
@@ -109,16 +125,45 @@ class DQNAgentParams(AgentParams):
         self.exploration_initial_eps = 1.0
         self.exploration_final_eps = 0.05
         self.max_grad_norm = 10
+
+        # offline RL parameters
+        self.buffer_train_fraction = 1.0    # 1.0 = use all for train. evaluation done on env
+                                            # 0.8 = use 0.8 for train, ope on rest 0.2
+
+
         return
 
 
 class PPOAgentParams(AgentParams):
     """
-    PPO2AgentParams
-    gamma = 0.99, n_steps = 128, ent_coef = 0.01, learning_rate = 2.5e-4, vf_coef = 0.5,
-    max_grad_norm = 0.5, lam = 0.95, nminibatches = 4, noptepochs = 4, cliprange = 0.2, cliprange_vf = None,
-    verbose = 0, tensorboard_log = None, _init_setup_model = True, policy_kwargs = None,
-    full_tensorboard_log = False, seed = None, n_cpu_tf_sess = None
+    PPOAgentParams
+    :param learning_rate: The learning rate, it can be a function
+        of the current progress remaining (from 1 to 0)
+    :param n_steps: The number of steps to run for each environment per update
+        (i.e. batch size is n_steps * n_env where n_env is number of environment copies running in parallel)
+    :param batch_size: Minibatch size
+    :param n_epochs: Number of epoch when optimizing the surrogate loss
+    :param gamma: Discount factor
+    :param gae_lambda: Factor for trade-off of bias vs variance for Generalized Advantage Estimator
+    :param clip_range: Clipping parameter, it can be a function of the current progress
+        remaining (from 1 to 0).
+    :param clip_range_vf: Clipping parameter for the value function,
+        it can be a function of the current progress remaining (from 1 to 0).
+        This is a parameter specific to the OpenAI implementation. If None is passed (default),
+        no clipping will be done on the value function.
+        IMPORTANT: this clipping depends on the reward scaling.
+    :param ent_coef: Entropy coefficient for the loss calculation
+    :param vf_coef: Value function coefficient for the loss calculation
+    :param max_grad_norm: The maximum value for the gradient clipping
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
+        instead of action noise exploration (default: False)
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
+        Default: -1 (only sample at the beginning of the rollout)
+    :param target_kl: Limit the KL divergence between updates,
+        because the clipping is not enough to prevent large update
+        see issue #213 (cf https://github.com/hill-a/stable-baselines/issues/213)
+        By default, there is no limit on the kl div.
+
     """
     def __init__(self):
         super(PPOAgentParams, self).__init__()
@@ -146,14 +191,37 @@ class PPOAgentParams(AgentParams):
 class SACAgentParams(AgentParams):
     """
     SACAgentParams:
-    policy, env,
-    gamma=0.99, learning_rate=3e-4, buffer_size=50000,
-    learning_starts=100, train_freq=1, batch_size=64,
-    tau=0.005, ent_coef='auto', target_update_interval=1,
-    gradient_steps=1, target_entropy='auto', action_noise=None,
-    random_exploration=0.0, verbose=0, tensorboard_log=None,
-    _init_setup_model=True, policy_kwargs=None, full_tensorboard_log=False,
-    seed=None, n_cpu_tf_sess=None
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1)
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
+        (see ``train_freq`` and ``n_episodes_rollout``)
+        Set to ``-1`` means to do as many gradient steps as steps done in the environment
+        during the rollout.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
+        Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
+    :param action_noise: the action noise type (None by default), this can help
+        for hard exploration problem. Cf common.noise for the different action noise type.
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
+        at a cost of more complexity.
+        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
+    :param ent_coef: Entropy regularization coefficient. (Equivalent to
+        inverse of reward scale in the original SAC paper.)  Controlling exploration/exploitation trade-off.
+        Set it to 'auto' to learn it automatically (and 'auto_0.1' for using 0.1 as initial value)
+    :param target_update_interval: update the target network every ``target_network_update_freq``
+        gradient steps.
+    :param target_entropy: target entropy when learning ``ent_coef`` (``ent_coef = 'auto'``)
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
+        instead of action noise exploration (default: False)
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
+        Default: -1 (only sample at the beginning of the rollout)
+    :param use_sde_at_warmup: Whether to use gSDE instead of uniform sampling
+        during the warm up phase (before learning starts)
+
     """
     def __init__(self):
         super(SACAgentParams, self).__init__()
@@ -184,15 +252,28 @@ class SACAgentParams(AgentParams):
 class DDPGAgentParams(AgentParams):
     """
     DDPGAgentParams
-    policy,env,
-    gamma=0.99, memory_policy=None, eval_env=None, nb_train_steps=50,
-    nb_rollout_steps=100, nb_eval_steps=100, param_noise=None, action_noise=None,
-    normalize_observations=False, tau=0.001, batch_size=128, param_noise_adaption_interval=50,
-    normalize_returns=False, enable_popart=False, observation_range=(-5., 5.), critic_l2_reg=0.,
-    return_range=(-np.inf, np.inf), actor_lr=1e-4, critic_lr=1e-3, clip_norm=None, reward_scale=1.,
-    render=False, render_eval=False, memory_limit=None, buffer_size=50000, random_exploration=0.0,
-    verbose=0, tensorboard_log=None, _init_setup_model=True, policy_kwargs=None,
-    full_tensorboard_log=False, seed=None, n_cpu_tf_sess=1
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: learning rate for adam optimizer,
+        the same learning rate will be used for all networks (Q-Values, Actor and Value function)
+        it can be a function of the current progress remaining (from 1 to 0)
+    :param buffer_size: size of the replay buffer
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1)
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
+        (see ``train_freq`` and ``n_episodes_rollout``)
+        Set to ``-1`` means to do as many gradient steps as steps done in the environment
+        during the rollout.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
+        Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
+    :param action_noise: the action noise type (None by default), this can help
+        for hard exploration problem. Cf common.noise for the different action noise type.
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
+        at a cost of more complexity.
+        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
     """
     def __init__(self):
         super(DDPGAgentParams, self).__init__()
@@ -219,11 +300,25 @@ class DDPGAgentParams(AgentParams):
 class A2CAgentParams(AgentParams):
     """
     A2CAgentParams
-    policy,env,
-    gamma=0.99, n_steps=5, vf_coef=0.25, ent_coef=0.01, max_grad_norm=0.5,
-    learning_rate=7e-4, alpha=0.99, epsilon=1e-5, lr_schedule='constant', verbose=0,
-    tensorboard_log=None, _init_setup_model=True, policy_kwargs=None,
-    full_tensorboard_log=False, seed=None, n_cpu_tf_sess=None
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: The learning rate, it can be a function
+    :param n_steps: The number of steps to run for each environment per update
+        (i.e. batch size is n_steps * n_env where n_env is number of environment copies running in parallel)
+    :param gamma: Discount factor
+    :param gae_lambda: Factor for trade-off of bias vs variance for Generalized Advantage Estimator
+        Equivalent to classic advantage when set to 1.
+    :param ent_coef: Entropy coefficient for the loss calculation
+    :param vf_coef: Value function coefficient for the loss calculation
+    :param max_grad_norm: The maximum value for the gradient clipping
+    :param rms_prop_eps: RMSProp epsilon. It stabilizes square root computation in denominator
+        of RMSProp update
+    :param use_rms_prop: Whether to use RMSprop (default) or Adam as optimizer
+    :param use_sde: Whether to use generalized State Dependent Exploration (gSDE)
+        instead of action noise exploration (default: False)
+    :param sde_sample_freq: Sample a new noise matrix every n steps when using gSDE
+        Default: -1 (only sample at the beginning of the rollout)
+    :param normalize_advantage: Whether to normalize or not the advantage
     """
     def __init__(self):
         super(A2CAgentParams, self).__init__()
@@ -249,14 +344,33 @@ class A2CAgentParams(AgentParams):
 class TD3AgentParams(AgentParams):
     """
     TD3AgentParams
-    policy,env,
-    gamma=0.99, learning_rate=3e-4, buffer_size=50000,
-    learning_starts=100, train_freq=100, gradient_steps=100, batch_size=128,
-    tau=0.005, policy_delay=2, action_noise=None,
-    target_policy_noise=0.2, target_noise_clip=0.5,
-    random_exploration=0.0, verbose=0, tensorboard_log=None,
-    _init_setup_model=True, policy_kwargs=None,
-    full_tensorboard_log=False, seed=None, n_cpu_tf_sess=None
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: learning rate for adam optimizer,
+        the same learning rate will be used for all networks (Q-Values, Actor and Value function)
+        it can be a function of the current progress remaining (from 1 to 0)
+    :param buffer_size: size of the replay buffer
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1)
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
+        (see ``train_freq`` and ``n_episodes_rollout``)
+        Set to ``-1`` means to do as many gradient steps as steps done in the environment
+        during the rollout.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
+        Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
+    :param action_noise: the action noise type (None by default), this can help
+        for hard exploration problem. Cf common.noise for the different action noise type.
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
+        at a cost of more complexity.
+        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
+    :param policy_delay: Policy and target networks will only be updated once every policy_delay steps
+        per training steps. The Q values will be updated policy_delay more often (update every training step).
+    :param target_policy_noise: Standard deviation of Gaussian noise added to target policy
+        (smoothing noise)
+    :param target_noise_clip: Limit for absolute value of target policy smoothing noise.
     """
     def __init__(self):
         super(TD3AgentParams, self).__init__()
@@ -409,8 +523,10 @@ class ExperimentParams:
 
 
         # given we do pretraining, use the following for pretrain (behavioral cloning)
-        self.experience_dataset = None          # path to experience buffer that can be wrapped by ExpertData
+        self.expert_data = None          # path to experience buffer that can be wrapped by ExpertData
                                                 # if None, there's no pre-train
+        # imitation learning parameters
+        self.pretrain_params = {'n_epochs':0,'lr':1e-4,'train_frac':0.8,'batch_size':64}
 
         self.save_replay_buffer = False         # whether to save the replay buffer used for training
                                                 # valid only for off-policy algorithms
@@ -434,14 +550,6 @@ class ExperimentParams:
 
         self.truncate_last_trajectory = True    # When using HER with online sampling the last trajectory in the
                                                 # replay buffer will be truncated after reloading the replay buffer.
-
-        ###### BatchRL #######
-        self.expert_model_file = None           # path to expert to generate experience for batch rl (if experience_dataset is not provided)
-                                                # if not None, will load it to generate the buffer
-                                                # currently not supported. SHOULD BE 'None' !
-        self.expert_params = None               # parameters for further training the expert
-                                                # can be any AgentParams from above (assuming coherency in obs,act)
-        self.train_expert_n_timesteps = 0      # number of timesteps to train the expert before starting to record
 
         self.expert_steps_to_record = 0        # number of episodes to record into the experience buffer
 

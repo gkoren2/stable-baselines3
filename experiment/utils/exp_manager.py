@@ -35,7 +35,7 @@ import experiment.envs.import_envs  # noqa: F401 pytype: disable=import-error
 from experiment.utils.callbacks import SaveVecNormalizeCallback, TrialEvalCallback, OnlEvalTBCallback
 from experiment.utils.hyperparams_opt import HYPERPARAMS_SAMPLER
 from experiment.utils.utils import ALGOS, get_callback_list, get_latest_run_id, get_wrapper_class, linear_schedule,\
-    online_eval_results_analysis,generate_experience_traj
+    online_eval_results_analysis,generate_experience_traj,load_experience_traj
 
 
 
@@ -67,6 +67,11 @@ class ExperimentManager(object):
         self.frame_stack = None
         self.seed = self.experiment_params.seed
 
+
+        # experience datasets (for offline and imitation learning)
+        self.expert_data = self.experiment_params.expert_data
+        self.pretrain_params = self.experiment_params.pretrain_params
+        self.pretrain_epochs = self.pretrain_params.get('n_epochs',0)
         # Callbacks
         self.callbacks = []
         self.save_freq = int(self.experiment_params.checkpoint_save_freq)
@@ -129,7 +134,7 @@ class ExperimentManager(object):
         self.create_log_folder()
 
 
-        if self.n_timesteps <= 0:
+        if self.n_timesteps <= 0:       # model should not be trained
             # imitate what is done in enjoy
             # prepare for environment creation
             env_params = self.experiment_params.env_params.as_dict()
@@ -153,11 +158,12 @@ class ExperimentManager(object):
 
             self.env_wrapper = self._preprocess_env_params(env_params)
 
-            self.create_callbacks()
-
             # Create env to have access to action space for action noise
             self.n_envs = self.experiment_params.n_envs
             env = self.create_envs(self.n_envs, no_log=False)
+
+            self.create_callbacks(agent_hyperparams)
+
 
             self._hyperparams = self._preprocess_action_noise(agent_hyperparams, env)
 
@@ -168,6 +174,9 @@ class ExperimentManager(object):
             else:
                 # Train an agent from scratch
                 model = ALGOS[self.algo](env=env, **self._hyperparams)
+
+            if self.experiment_params.expert_data:
+                self.expert_data = self._load_experience_buffers(env)  # load from files to single dict
 
             self._save_config(saved_hyperparams)
         return model
@@ -183,6 +192,21 @@ class ExperimentManager(object):
 
         if len(self.callbacks) > 0:
             kwargs["callback"] = self.callbacks
+
+        # there are several scenarios we support
+        # 1. if we dont have expert_data, its a regular online learning from env
+        # 2. if we have expert data:
+        #   2a. if pretrain_epochs>0 : we initiate the policy with imitation learning from expert and continue to train
+        #       on env
+        #   2b. if pretrain_epochs=0 and hasattr(model,'load_expert_buf'): offline RL scenario. we load the buf
+        #       to the model and do offline RL. this is also the place to split the buffer if we also do ope
+        if self.expert_data:
+            if self.pretrain_epochs>0:
+                model = self.pretrain_model(model, **self.pretrain_params)
+            elif hasattr(model,'load_expert_buf'):      # offline RL scenario
+                # future: if we support ope, here's the place to split the buffer to train_buf and eval_buf
+                # and provide the model only with the train_buf and define a callback with the eval_buf
+                model.load_expert_buf(self.expert_data)
 
         try:
             model.learn(self.n_timesteps, **kwargs)
@@ -229,7 +253,9 @@ class ExperimentManager(object):
                                      n_timesteps_record=self.experiment_params.expert_steps_to_record)
         return
 
-
+    def pretrain_model(self,model: BaseAlgorithm,**pretrain_params):
+        logger.warn("pretraining currently not supported")
+        return model
 
     def read_hyperparameters(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
 
@@ -427,11 +453,15 @@ class ExperimentManager(object):
                 raise ValueError(f"Invalid value for {key}: {hyperparams[key]}")
         return hyperparams
 
-    def create_callbacks(self):
+    def create_callbacks(self,agent_hyperparams: Dict[str, Any]):
+
+        offline_rl = self.expert_data is not None and self.pretrain_epochs==0
 
         if self.save_freq > 0:
             # Account for the number of parallel environments
             self.save_freq = max(self.save_freq // self.n_envs, 1)
+            if offline_rl:
+                self.save_freq = int(self.save_freq/agent_hyperparams['batch_size'])
             self.callbacks.append(
                 CheckpointCallback(
                     save_freq=self.save_freq,
@@ -445,6 +475,8 @@ class ExperimentManager(object):
         if self.eval_freq > 0 and not self.optimize_hyperparameters:
             # Account for the number of parallel environments
             self.eval_freq = max(self.eval_freq // self.n_envs, 1)
+            if offline_rl:
+                self.eval_freq = int(self.eval_freq/agent_hyperparams['batch_size'])
             save_vec_normalize = SaveVecNormalizeCallback(save_freq=1, save_path=self.params_path)
             eval_callback = OnlEvalTBCallback(
                 self.create_envs(1, eval_env=True),
@@ -482,13 +514,30 @@ class ExperimentManager(object):
             else:
                 raise RuntimeError(f'Unknown noise type "{noise_type}"')
 
-            print(f"Applying {noise_type} noise with std {noise_std}")
+            logger.info(f"Applying {noise_type} noise with std {noise_std}")
 
             del agent_hyperparams["noise_type"]
             del agent_hyperparams["noise_std"]
 
         return agent_hyperparams
 
+    def _load_experience_buffers(self,env: VecEnv) -> dict:
+        # if we got an existing experience buffer, load from file and return it
+        experience_buffers = []
+        if isinstance(self.expert_data, str):
+            dataset_files = [self.expert_data]
+        else:  # assuming list of strings
+            dataset_files = self.expert_data
+        for dataset_file in dataset_files:
+            if os.path.exists(dataset_file):
+                logger.info('loading experience buffer from ' + dataset_file)
+                experience_buffers.append(load_experience_traj(dataset_file,env.observation_space,env.action_space))
+            else:
+                logger.warn('dataset file {0} not found'.format(dataset_file))
+        # concatenate all buffers together
+        experience_buffer = {k: np.concatenate([exp_buf[k] for exp_buf in experience_buffers])
+                             for k in experience_buffers[0]}
+        return experience_buffer
 
     def _load_pretrained_agent(self, hyperparams: Dict[str, Any], env: VecEnv) -> BaseAlgorithm:
         # Continue training
