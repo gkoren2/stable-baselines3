@@ -2,7 +2,7 @@ import io
 import pathlib
 import time
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
@@ -15,7 +15,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.save_util import load_from_pkl, save_to_pkl
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn
+from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn, Schedule
 from stable_baselines3.common.utils import safe_mean
 from stable_baselines3.common.vec_env import VecEnv
 
@@ -69,6 +69,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
     :param sde_support: Whether the model support gSDE or not
     :param remove_time_limit_termination: Remove terminations (dones) that are due to time limit.
         See https://github.com/hill-a/stable-baselines/issues/863
+    :param supported_action_spaces: The action spaces supported by the algorithm.
     """
 
     def __init__(
@@ -76,7 +77,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         policy: Type[BasePolicy],
         env: Union[GymEnv, str],
         policy_base: Type[BasePolicy],
-        learning_rate: Union[float, Callable],
+        learning_rate: Union[float, Schedule],
         buffer_size: int = int(1e6),
         learning_starts: int = 100,
         batch_size: int = 256,
@@ -100,6 +101,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         use_sde_at_warmup: bool = False,
         sde_support: bool = True,
         remove_time_limit_termination: bool = False,
+        supported_action_spaces: Optional[Tuple[gym.spaces.Space, ...]] = None,
     ):
 
         super(OffPolicyAlgorithm, self).__init__(
@@ -117,6 +119,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             seed=seed,
             use_sde=use_sde,
             sde_sample_freq=sde_sample_freq,
+            supported_action_spaces=supported_action_spaces,
         )
         self.buffer_size = buffer_size
         self.batch_size = batch_size
@@ -192,7 +195,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         self,
         total_timesteps: int,
         eval_env: Optional[GymEnv],
-        callback: Union[None, Callable, List[BaseCallback], BaseCallback] = None,
+        callback: MaybeCallback = None,
         eval_freq: int = 10000,
         n_eval_episodes: int = 5,
         log_path: Optional[str] = None,

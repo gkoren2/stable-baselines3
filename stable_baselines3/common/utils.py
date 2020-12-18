@@ -3,7 +3,7 @@ import os
 import random
 from collections import deque
 from itertools import zip_longest
-from typing import Callable, Iterable, Optional, Union
+from typing import Iterable, Optional, Union
 
 import gym
 import numpy as np
@@ -16,7 +16,7 @@ except ImportError:
     SummaryWriter = None
 
 from stable_baselines3.common import logger
-from stable_baselines3.common.type_aliases import GymEnv
+from stable_baselines3.common.type_aliases import GymEnv, Schedule
 
 
 def set_random_seed(seed: int, using_cuda: bool = False) -> None:
@@ -70,7 +70,7 @@ def update_learning_rate(optimizer: th.optim.Optimizer, learning_rate: float) ->
         param_group["lr"] = learning_rate
 
 
-def get_schedule_fn(value_schedule: Union[Callable, float]) -> Callable:
+def get_schedule_fn(value_schedule: Union[Schedule, float, int]) -> Schedule:
     """
     Transform (if needed) learning rate and clip range (for PPO)
     to callable.
@@ -88,7 +88,7 @@ def get_schedule_fn(value_schedule: Union[Callable, float]) -> Callable:
     return value_schedule
 
 
-def get_linear_fn(start: float, end: float, end_fraction: float) -> Callable:
+def get_linear_fn(start: float, end: float, end_fraction: float) -> Schedule:
     """
     Create a function that interpolates linearly between start and end
     between ``progress_remaining`` = 1 and ``progress_remaining`` = ``end_fraction``.
@@ -112,7 +112,7 @@ def get_linear_fn(start: float, end: float, end_fraction: float) -> Callable:
     return func
 
 
-def constant_fn(val: float) -> Callable:
+def constant_fn(val: float) -> Schedule:
     """
     Create a function that returns a constant
     It is useful for learning rate schedule (to avoid code duplication)
