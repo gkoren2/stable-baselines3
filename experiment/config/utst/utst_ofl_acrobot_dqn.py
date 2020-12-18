@@ -10,9 +10,8 @@ env_params.env_id = 'acrobot'
 ##########################################################
 # Experience Buffer or Expert generator
 ##########################################################
-# experience_dataset = "/home/gkoren2/share/Data/MLA/sbl3/results/utst_onl_acrobot_dqn_ro-26-11-2020_14-58-26/1/er_Acrobot-v1_dqn_100000.npz"
 experience_dataset = '/home/gkoren2/share/Data/MLA/sbl3/results/utst_onl_acrobot_rnd-16-12-2020_12-52-46/1/er_Acrobot-v1_random_100000.npz'
-
+# experience_dataset = '/home/gkoren2/share/Data/MLA/sbl3/results/utst_onl_acrobot_dqn-17-12-2020_15-30-58/1/er_Acrobot-v1_dqn_100000.npz'
 
 #################
 # Policy        #

@@ -329,25 +329,19 @@ class DQN(OffPolicyAlgorithm):
                 iter_cnt += 1
                 ts += len(obs)
                 tot_epoch_loss += np.mean(losses)
+                callback.update_locals(locals())
                 # in offline rl, the step is training step done on a minibatch of samples.
                 if callback.on_step() is False:
                     break
 
-
             epoch += 1  # inc
             # finished going through the data. summarize the epoch:
             avg_epoch_loss = tot_epoch_loss / n_minibatches
-            # # should_update_target = ((ts-last_updadte_target_ts)>self.target_network_update_freq)
-            # should_update_target = ((epoch % self.target_network_update_freq) == 0)
-            # if should_update_target:
-            #     # Update target network periodically.
-            #     self.update_target(sess=self.sess)
-            #     last_updadte_target_ts = ts
-
-            # update the target network every target_update_interval epochs
-            # tau=1 for hard update
-            if epoch % self.target_update_interval == 0:
+            should_update_target = ((ts-last_updadte_target_ts)>self.target_update_interval)
+            # should_update_target = ((epoch % self.target_update_interval) == 0)
+            if should_update_target:
                 polyak_update(self.q_net.parameters(), self.q_net_target.parameters(), self.tau)
+                last_updadte_target_ts = ts
 
         callback.on_training_end()
         return self
