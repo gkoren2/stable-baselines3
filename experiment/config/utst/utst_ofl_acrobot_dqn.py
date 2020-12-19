@@ -29,10 +29,10 @@ agent_params.policy = policy
 agent_params.learning_rate = 1e-4
 agent_params.batch_size = 128
 agent_params.gamma = 0.99
-agent_params.target_update_interval = 1     # in offline mode, measure by epochs
+agent_params.target_update_interval = 500     # in offline mode, measure by minibatches
 agent_params.tau = 1.0                      # perform hard update (copy the parameters)
-agent_params.gradient_steps = -1
-agent_params.policy_kwargs = dict(net_arch=[256, 256])
+agent_params.gradient_steps = 1
+agent_params.policy_kwargs = dict(net_arch=[64])
 
 
 ##########################################################
@@ -41,10 +41,10 @@ agent_params.policy_kwargs = dict(net_arch=[256, 256])
 experiment_params = ExperimentParams()
 experiment_params.env_params = env_params
 experiment_params.expert_data = experience_dataset
-experiment_params.n_timesteps = 100000
+experiment_params.n_timesteps = 1000000
 experiment_params.agent_params = agent_params
 experiment_params.expert_steps_to_record = 50000  # number of episodes to record into the experience buffer
-experiment_params.online_eval_freq = int(experiment_params.n_timesteps/10)  # evaluate on eval env every this number of timesteps
+experiment_params.online_eval_freq = int(experiment_params.n_timesteps/50)  # evaluate on eval env every this number of timesteps
 experiment_params.online_eval_n_episodes = 30
 experiment_params.name = __name__.split('.')[-1]
 

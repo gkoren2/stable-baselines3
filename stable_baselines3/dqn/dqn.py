@@ -260,10 +260,12 @@ class DQN(OffPolicyAlgorithm):
     def _train_on_batch(self,observations,next_observations,actions,rewards,dones):
         losses = []
         with th.no_grad():
+            best_next_action = self.q_net(next_observations).argmax(dim=1)  # double DQN
             # Compute the target Q values
             target_q = self.q_net_target(next_observations)
             # Follow greedy policy: use the one with the highest value
-            target_q, _ = target_q.max(dim=1)
+            # target_q, _ = target_q.max(dim=1)     # comment for double DQN
+            target_q = target_q.gather(1,best_next_action.unsqueeze(-1)).squeeze(-1)    # double DQN
             # Avoid potential broadcast issue
             target_q = target_q.reshape(-1, 1)
             # 1-step TD target
@@ -333,15 +335,15 @@ class DQN(OffPolicyAlgorithm):
                 # in offline rl, the step is training step done on a minibatch of samples.
                 if callback.on_step() is False:
                     break
+                should_update_target = ((ts-last_updadte_target_ts)>self.target_update_interval)
+                # should_update_target = ((epoch % self.target_update_interval) == 0)
+                if should_update_target:
+                    polyak_update(self.q_net.parameters(), self.q_net_target.parameters(), self.tau)
+                    last_updadte_target_ts = ts
 
             epoch += 1  # inc
             # finished going through the data. summarize the epoch:
             avg_epoch_loss = tot_epoch_loss / n_minibatches
-            should_update_target = ((ts-last_updadte_target_ts)>self.target_update_interval)
-            # should_update_target = ((epoch % self.target_update_interval) == 0)
-            if should_update_target:
-                polyak_update(self.q_net.parameters(), self.q_net_target.parameters(), self.tau)
-                last_updadte_target_ts = ts
 
         callback.on_training_end()
         return self

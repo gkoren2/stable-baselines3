@@ -28,7 +28,7 @@ agent_params.batch_size = 128
 agent_params.learning_starts = 0
 agent_params.gamma = 0.99
 agent_params.target_update_interval = 250
-agent_params.gradient_steps = -1
+agent_params.gradient_steps = 1
 agent_params.policy_kwargs = dict(net_arch=[256, 256])
 
 
