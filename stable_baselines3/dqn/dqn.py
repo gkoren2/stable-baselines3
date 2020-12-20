@@ -344,6 +344,14 @@ class DQN(OffPolicyAlgorithm):
             epoch += 1  # inc
             # finished going through the data. summarize the epoch:
             avg_epoch_loss = tot_epoch_loss / n_minibatches
+            self.num_timesteps = ts
+            # add recording to logger. see self._dump_logs() for example.
+            # its called from collect_rollouts in the online version
+            logger.record("time/epoch", epoch, exclude="tensorboard")
+            logger.record("time/total timesteps", self.num_timesteps, exclude="tensorboard")
+            logger.record("train/epoch_loss",avg_epoch_loss)
+            # Pass the number of timesteps for tensorboard
+            logger.dump(step=self.num_timesteps)
 
         callback.on_training_end()
         return self

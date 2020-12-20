@@ -162,7 +162,6 @@ class OnlEvalTBCallback(EvalCallback):
             if self.logger_verbose > 0:
                 logger.info("Eval num_timesteps={}, "
                       "episode_reward={:.2f}".format(self.num_timesteps, self.last_mean_reward))
-            value = self.last_mean_reward
-            logger.record('eval/onl_mean_reward',value)
+            logger.record('eval/onl_mean_reward',self.last_mean_reward)
 
         return Result
