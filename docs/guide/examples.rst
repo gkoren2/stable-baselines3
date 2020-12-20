@@ -79,6 +79,9 @@ In the following example, we will train, save and load a DQN model on the Lunar 
   model = DQN.load("dqn_lunar")
 
   # Evaluate the agent
+  # NOTE: If you use wrappers with your environment that modify rewards,
+  #       this will be reflected here. To evaluate with original rewards,
+  #       wrap environment in a "Monitor" wrapper before other wrappers.
   mean_reward, std_reward = evaluate_policy(model, model.get_env(), n_eval_episodes=10)
 
   # Enjoy trained agent
@@ -417,6 +420,50 @@ The parking env is a goal-conditioned continuous control task, in which the vehi
           print("Reward:", episode_reward, "Success?", info.get("is_success", False))
           episode_reward = 0.0
           obs = env.reset()
+
+
+Learning Rate Schedule
+----------------------
+
+All algorithms allow you to pass a learning rate schedule that takes as input the current progress remaining (from 1 to 0).
+``PPO``'s ``clip_range``` parameter also accepts such schedule.
+
+The `RL Zoo <https://github.com/DLR-RM/rl-baselines3-zoo>`_ already includes
+linear and constant schedules.
+
+
+.. code-block:: python
+
+  from typing import Callable
+
+  from stable_baselines3 import PPO
+
+
+  def linear_schedule(initial_value: float) -> Callable[[float], float]:
+      """
+      Linear learning rate schedule.
+
+      :param initial_value: Initial learning rate.
+      :return: schedule that computes
+        current learning rate depending on remaining progress
+      """
+      def func(progress_remaining: float) -> float:
+          """
+          Progress will decrease from 1 (beginning) to 0.
+
+          :param progress_remaining:
+          :return: current learning rate
+          """
+          return progress_remaining * initial_value
+
+      return func
+
+  # Initial learning rate of 0.001
+  model = PPO("MlpPolicy", "CartPole-v1", learning_rate=linear_schedule(0.001), verbose=1)
+  model.learn(total_timesteps=20000)
+  # By default, `reset_num_timesteps` is True, in which case the learning rate schedule resets.
+  # progress_remaining = 1.0 - (num_timesteps / total_timesteps)
+  model.learn(total_timesteps=10000, reset_num_timesteps=True)
 
 
 Advanced Saving and Loading

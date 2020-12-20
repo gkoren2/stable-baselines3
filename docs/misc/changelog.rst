@@ -3,12 +3,15 @@
 Changelog
 ==========
 
-Pre-Release 0.11.0a0 (WIP)
+Pre-Release 0.11.0a2 (WIP)
 -------------------------------
 
 Breaking Changes:
 ^^^^^^^^^^^^^^^^^
-
+- ``evaluate_policy`` now returns rewards/episode lengths from a ``Monitor`` wrapper if one is present,
+  this allows to return the unnormalized reward in the case of Atari games for instance.
+- Renamed ``common.vec_env.is_wrapped`` to ``common.vec_env.is_vecenv_wrapped`` to avoid confusion
+  with the new ``is_wrapped()`` helper
 
 New Features:
 ^^^^^^^^^^^^^
@@ -16,10 +19,21 @@ New Features:
   automatic check for image spaces.
 - ``VecFrameStack`` now has a ``channels_order`` argument to tell if observations should be stacked
   on the first or last observation dimension (originally always stacked on last).
+- Added ``common.env_util.is_wrapped`` and ``common.env_util.unwrap_wrapper`` functions for checking/unwrapping
+  an environment for specific wrapper.
+- Added ``env_is_wrapped()`` method for ``VecEnv`` to check if its environments are wrapped
+  with given Gym wrappers.
+- Added ``monitor_kwargs`` parameter to ``make_vec_env`` and ``make_atari_env``
+- Wrap the environments automatically with a ``Monitor`` wrapper when possible.
+- ``EvalCallback`` now logs the success rate when available (``is_success`` must be present in the info dict)
 
 Bug Fixes:
 ^^^^^^^^^^
 - Fixed bug where code added VecTranspose on channel-first image environments (thanks @qxcv)
+- Fixed ``DQN`` predict method when using single ``gym.Env`` with ``deterministic=False``
+- Fixed bug that the arguments order of ``explained_variance()`` in ``ppo.py`` and ``a2c.py`` is not correct (@thisray)
+- Fixed bug where full ``HerReplayBuffer`` leads to an index error. (@megan-klaiber)
+- Fixed bug where replay buffer could not be saved if it was too big (> 4 Gb) for python<3.8 (thanks @hn2)
 
 Deprecations:
 ^^^^^^^^^^^^^
@@ -27,13 +41,20 @@ Deprecations:
 Others:
 ^^^^^^^
 - Add more issue templates
+- Add signatures to callable type annotations (@ernestum)
 - Improve error message in ``NatureCNN``
+- Added checks for supported action spaces to improve clarity of error messages for the user
 
 Documentation:
 ^^^^^^^^^^^^^^
 - Updated algorithm table
 - Minor docstring improvements regarding rollout (@stheid)
-
+- Fix migration doc for ``A2C`` (epsilon parameter)
+- Fix ``clip_range`` docstring
+- Fix duplicated parameter in ``EvalCallback`` docstring (thanks @tfederico)
+- Added example of learning rate schedule
+- Added SUMO-RL as example project (@LucasAlegre)
+- Fix docstring of classes in atari_wrappers.py which were inside the constructor (@LucasAlegre)
 
 Pre-Release 0.10.0 (2020-10-28)
 -------------------------------
@@ -480,11 +501,11 @@ Maintainers
 -----------
 
 Stable-Baselines3 is currently maintained by `Antonin Raffin`_ (aka `@araffin`_), `Ashley Hill`_ (aka @hill-a),
-`Maximilian Ernestus`_ (aka @erniejunior), `Adam Gleave`_ (`@AdamGleave`_) and `Anssi Kanervisto`_ (aka `@Miffyli`_).
+`Maximilian Ernestus`_ (aka @ernestum), `Adam Gleave`_ (`@AdamGleave`_) and `Anssi Kanervisto`_ (aka `@Miffyli`_).
 
 .. _Ashley Hill: https://github.com/hill-a
 .. _Antonin Raffin: https://araffin.github.io/
-.. _Maximilian Ernestus: https://github.com/erniejunior
+.. _Maximilian Ernestus: https://github.com/ernestum
 .. _Adam Gleave: https://gleave.me/
 .. _@araffin: https://github.com/araffin
 .. _@AdamGleave: https://github.com/adamgleave
@@ -507,4 +528,5 @@ And all the contributors:
 @MarvineGothic @jdossgollin @stheid @SyllogismRXS @rusu24edward @jbulow @Antymon @seheevic @justinkterry @edbeeching
 @flodorner @KuKuXia @NeoExtended @PartiallyTyped @mmcenta @richardwu @kinalmehta @rolandgvc @tkelestemur @mloo3
 @tirafesi @blurLake @koulakis @joeljosephjin @shwang @rk37 @andyshih12 @RaphaelWag @xicocaio
-@diditforlulz273 @liorcohen5 @ManifoldFR @mloo3 @SwamyDev @wmmc88 @megan-klaiber
+@diditforlulz273 @liorcohen5 @ManifoldFR @mloo3 @SwamyDev @wmmc88 @megan-klaiber @thisray
+@tfederico @hn2 @LucasAlegre
