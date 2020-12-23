@@ -73,6 +73,7 @@ class QRDQN(OffPolicyAlgorithm):
         exploration_initial_eps: float = 1.0,
         exploration_final_eps: float = 0.01,
         max_grad_norm: Optional[float] = None,
+        buffer_train_fraction: float = 1.0,
         tensorboard_log: Optional[str] = None,
         create_eval_env: bool = False,
         policy_kwargs: Optional[Dict[str, Any]] = None,
@@ -97,6 +98,7 @@ class QRDQN(OffPolicyAlgorithm):
             n_episodes_rollout,
             action_noise=None,  # No action noise
             policy_kwargs=policy_kwargs,
+            buffer_train_fraction=buffer_train_fraction,
             tensorboard_log=tensorboard_log,
             verbose=verbose,
             device=device,

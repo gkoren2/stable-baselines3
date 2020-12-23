@@ -1,5 +1,4 @@
-from my_zoo.hyperparams.default_config import *
-from stable_baselines.qrdqn.policies import MlpPolicy
+from experiment.config.default_config import *
 
 ##########################################################
 # Env                                                    #
@@ -10,8 +9,8 @@ env_params.env_id = 'acrobot'
 #################
 # Policy        #
 #################
-policy = MlpPolicy
-policy_kwargs={'layers': [64]}
+policy = 'MlpPolicy'
+
 
 ##########################################################
 # Agent Params                                           #
@@ -41,23 +40,17 @@ policy_kwargs={'layers': [64]}
 agent_params = QRDQNAgentParams()
 # here we can change the various parameters - for example, we can change the batch size
 agent_params.policy = policy
-agent_params.policy_kwargs = policy_kwargs
-agent_params.n_atoms = 10
-agent_params.learning_rate = 1e-3
-agent_params.exploration_final_eps= 0.1
-agent_params.prioritized_replay = True
 
 
 ##########################################################
 # Experiment                                             #
 ##########################################################
 experiment_params = ExperimentParams()
-# experiment_params.n_timesteps = 1e6
-experiment_params.n_timesteps = 1e5
+experiment_params.n_timesteps = 100000
 experiment_params.env_params = env_params
 experiment_params.agent_params = agent_params
-experiment_params.expert_steps_to_record = 50000  # number of episodes to record into the experience buffer
-experiment_params.online_eval_freq = int(experiment_params.n_timesteps/100)  # evaluate on eval env every this number of timesteps
+experiment_params.expert_steps_to_record = 0  # number of episodes to record into the experience buffer
+experiment_params.online_eval_freq = int(experiment_params.n_timesteps/20)  # evaluate on eval env every this number of timesteps
 experiment_params.online_eval_n_episodes = 30
 experiment_params.name = __name__.split('.')[-1]
 

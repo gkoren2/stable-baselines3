@@ -15,6 +15,7 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecEnv, VecFrameStack, VecNormalize
 from stable_baselines3.common.buffers import ReplayBuffer
 from stable_baselines3.common import logger
+
 try:
     from sb3_contrib import TQC  # pytype: disable=import-error
 except ImportError:
