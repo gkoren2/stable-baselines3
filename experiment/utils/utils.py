@@ -20,6 +20,12 @@ try:
 except ImportError:
     TQC = None
 
+try:
+    from sb3_contrib import QRDQN  # pytype: disable=import-error
+except ImportError:
+    QRDQN = None
+
+
 # For custom activation fn
 from torch import nn as nn  # noqa: F401 pylint: disable=unused-import
 
@@ -35,6 +41,10 @@ ALGOS = {
 
 if TQC is not None:
     ALGOS["tqc"] = TQC
+
+if QRDQN is not None:
+    ALGOS["qrdqn"] = QRDQN
+
 
 class UniformRandomModel(object):
     def __init__(self,env):

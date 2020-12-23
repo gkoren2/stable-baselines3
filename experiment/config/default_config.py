@@ -134,6 +134,80 @@ class DQNAgentParams(AgentParams):
         return
 
 
+class QRDQNAgentParams(AgentParams):
+    """
+    Parameters for QRDQN agent
+    Quantile Regression Deep Q-Network (QR-DQN)
+    Paper: https://arxiv.org/abs/1710.10044
+    Default hyperparameters are taken from the paper and are tuned for Atari games.
+
+    :param policy: The policy model to use (MlpPolicy, CnnPolicy, ...)
+    :param env: The environment to learn from (if registered in Gym, can be str)
+    :param learning_rate: The learning rate, it can be a function
+        of the current progress remaining (from 1 to 0)
+    :param buffer_size: size of the replay buffer
+    :param learning_starts: how many steps of the model to collect transitions for before learning starts
+    :param batch_size: Minibatch size for each gradient update
+    :param tau: the soft update coefficient ("Polyak update", between 0 and 1) default 1 for hard update
+    :param gamma: the discount factor
+    :param train_freq: Update the model every ``train_freq`` steps. Set to `-1` to disable.
+    :param gradient_steps: How many gradient steps to do after each rollout
+        (see ``train_freq`` and ``n_episodes_rollout``)
+        Set to ``-1`` means to do as many gradient steps as steps done in the environment
+        during the rollout.
+    :param n_episodes_rollout: Update the model every ``n_episodes_rollout`` episodes.
+        Note that this cannot be used at the same time as ``train_freq``. Set to `-1` to disable.
+    :param optimize_memory_usage: Enable a memory efficient variant of the replay buffer
+        at a cost of more complexity.
+        See https://github.com/DLR-RM/stable-baselines3/issues/37#issuecomment-637501195
+    :param target_update_interval: update the target network every ``target_update_interval``
+        environment steps.
+    :param exploration_fraction: fraction of entire training period over which the exploration rate is reduced
+    :param exploration_initial_eps: initial value of random action probability
+    :param exploration_final_eps: final value of random action probability
+    :param max_grad_norm: The maximum value for the gradient clipping (if None, no clipping)
+    :param tensorboard_log: the log location for tensorboard (if None, no logging)
+    :param create_eval_env: Whether to create a second environment that will be
+        used for evaluating the agent periodically. (Only available when passing string for the environment)
+    :param policy_kwargs: additional arguments to be passed to the policy on creation
+    :param verbose: the verbosity level: 0 no output, 1 info, 2 debug
+    :param seed: Seed for the pseudo random generators
+    :param device: Device (cpu, cuda, ...) on which the code should be run.
+        Setting it to auto, the code will be run on the GPU if possible.
+    :param _init_setup_model: Whether or not to build the network at the creation of the instance
+    """
+
+    def __init__(self):
+        super(QRDQNAgentParams, self).__init__()
+        # Default parameters for DQN Agent
+        self.algorithm = 'qrdqn'
+
+        self.policy = 'MlpPolicy'    # or 'CnnPolicy'
+
+        self.learning_rate = 5e-5
+        self.buffer_size= 1000000
+        self.learning_starts = 50000
+        self.batch_size = 32
+        self.tau = 1.0
+        self.gamma = 0.99
+        self.train_freq = 4
+        self.gradient_steps = 1
+        self.n_episodes_rollout = -1
+        self.optimize_memory_usage = False
+        self.target_update_interval = 10000
+        self.exploration_fraction = 0.1
+        self.exploration_initial_eps = 1.0
+        self.exploration_final_eps = 0.05
+        self.max_grad_norm = None
+
+        # offline RL parameters
+        self.buffer_train_fraction = 1.0    # 1.0 = use all for train. evaluation done on env
+                                            # 0.8 = use 0.8 for train, ope on rest 0.2
+
+
+        return
+
+
 class PPOAgentParams(AgentParams):
     """
     PPOAgentParams
@@ -438,54 +512,6 @@ class DBCQAgentParams(AgentParams):
         self.n_cpu_tf_sess = None
         self.policy_kwargs = None
         return
-
-class QRDQNAgentParams(AgentParams):
-    """
-    Parameters for DQN agent
-    The agent gets the following values in its construction:
-    policy,env
-    gamma = 0.99, learning_rate = 5e-4, buffer_size = 50000, exploration_fraction = 0.1,
-    exploration_final_eps = 0.02, exploration_initial_eps = 1.0, train_freq = 1, batch_size = 32, double_q = True,
-    learning_starts = 1000, target_network_update_freq = 500, prioritized_replay = False,
-    prioritized_replay_alpha = 0.6, prioritized_replay_beta0 = 0.4, prioritized_replay_beta_iters = None,
-    prioritized_replay_eps = 1e-6, param_noise = False,
-
-    n_cpu_tf_sess = None, verbose = 0, tensorboard_log = None, _init_setup_model = True, policy_kwargs = None,
-    full_tensorboard_log = False, seed = None
-    """
-    def __init__(self):
-        super(QRDQNAgentParams, self).__init__()
-        # Default parameters for DQN Agent
-        self.algorithm = 'qrdqn'
-
-        self.policy = 'MlpPolicy'    # or 'CnnPolicy' or 'CustomDQNPolicy'
-        self.buffer_size = 50000
-        self.learning_rate = 1e-4
-        self.learning_starts = 1000
-        self.target_network_update_freq = 500
-        self.train_freq = 1
-        self.exploration_initial_eps = 1.0
-        self.exploration_final_eps = 0.02
-        self.exploration_fraction = 0.1
-        self.prioritized_replay_alpha = 0.6
-        self.prioritized_replay = False
-        self.param_noise = False
-        self.n_atoms = 50
-
-        # batch_rl defaults:
-        self.buffer_train_fraction = 1.0        # 80% will be used for training the policy and the reward model for DM
-
-        # other default params
-        self.gamma = 0.99
-        self.batch_size = 32
-        self.double_q = False
-        self.prioritized_replay_beta0 = 0.4
-        self.prioritized_replay_beta_iters = None
-        self.prioritized_replay_eps = 1e-6
-        self.n_cpu_tf_sess = None
-        self.policy_kwargs = None
-        return
-
 
 #################################
 # Experiment Params

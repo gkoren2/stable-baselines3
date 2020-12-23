@@ -2,7 +2,7 @@ import io
 import pathlib
 import time
 import warnings
-from typing import Any, Dict, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import gym
 import numpy as np
@@ -16,7 +16,7 @@ from stable_baselines3.common.noise import ActionNoise
 from stable_baselines3.common.policies import BasePolicy
 from stable_baselines3.common.save_util import load_from_pkl, save_to_pkl
 from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, RolloutReturn, Schedule
-from stable_baselines3.common.utils import safe_mean
+from stable_baselines3.common.utils import safe_mean, polyak_update
 from stable_baselines3.common.vec_env import VecEnv
 from stable_baselines3.common.dataset import ExperienceDataset      # offline RL
 
@@ -160,6 +160,7 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         # for offline RL
         self.experience_dataset = None
         self.buffer_train_fraction = buffer_train_fraction
+        self.last_updadte_target_timestep = 0
 
     def _setup_model(self) -> None:
         self._setup_lr_schedule()
@@ -244,9 +245,14 @@ class OffPolicyAlgorithm(BaseAlgorithm):
             pos = (self.replay_buffer.pos - 1) % self.replay_buffer.buffer_size
             self.replay_buffer.dones[pos] = True
 
-        return super()._setup_learn(
+        result = super()._setup_learn(
             total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, log_path, reset_num_timesteps, tb_log_name
         )
+
+        # reset last_update_target_timestep for _train_on_batch (offline rl)
+        self.last_updadte_target_timestep = self.num_timesteps
+
+        return result
 
     def learn(
         self,
@@ -299,6 +305,66 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         (gradient descent and update target networks)
         """
         raise NotImplementedError()
+
+
+    def _learn_from_static_buffer(self,
+                                  total_timesteps: int,
+                                  callback: MaybeCallback = None,
+                                  log_interval: int = 10,
+                                  eval_env: Optional[GymEnv] = None,
+                                  eval_freq: int = -1,
+                                  n_eval_episodes: int = 5,
+                                  tb_log_name: str = "run",
+                                  eval_log_path: Optional[str] = None,
+                                  reset_num_timesteps: bool = True,
+                                  ) -> "OffPolicyAlgorithm":
+        # todo: consider having a dedicated _setup_learn for offline rl. (only if necessary)
+        total_timesteps, callback = self._setup_learn(
+            total_timesteps, eval_env, callback, eval_freq, n_eval_episodes, eval_log_path, reset_num_timesteps, tb_log_name
+        )
+
+        iter_cnt = 0  # iterations counter
+        ts = 0
+        epoch = 0  # epochs counter
+        mean_reward = None
+        last_updadte_target_ts = 0
+        n_minibatches = len(self.experience_dataset.train_loader)
+
+        callback.on_training_start(locals(), globals())
+        while ts < total_timesteps:
+            # Update learning rate according to schedule
+            self._update_learning_rate(self.policy.optimizer)
+            tot_epoch_loss=0
+            for _ in range(n_minibatches):
+                obs, next_obs, actions, rewards, dones = self.experience_dataset.get_next_batch('train')
+                losses = self._train_on_batch(obs, next_obs, actions, rewards, dones)
+                # update counters
+                self.num_timesteps += len(obs)
+                iter_cnt += 1
+                ts += len(obs)
+                tot_epoch_loss += np.mean(losses)
+                callback.update_locals(locals())
+                # in offline rl, the step is training step done on a minibatch of samples.
+                if callback.on_step() is False:
+                    break
+                self._on_mini_batch()
+
+            epoch += 1  # inc
+            # finished going through the data. summarize the epoch:
+            avg_epoch_loss = tot_epoch_loss / n_minibatches
+            self.num_timesteps = ts
+            # add recording to logger. see self._dump_logs() for example.
+            # its called from collect_rollouts in the online version
+            logger.record("time/epoch", epoch, exclude="tensorboard")
+            logger.record("time/total timesteps", self.num_timesteps, exclude="tensorboard")
+            logger.record("train/epoch_loss",avg_epoch_loss)
+            # Pass the number of timesteps for tensorboard
+            logger.dump(step=self.num_timesteps)
+
+        callback.on_training_end()
+        return self
+
+
 
     def _sample_action(
         self, learning_starts: int, action_noise: Optional[ActionNoise] = None
@@ -493,3 +559,18 @@ class OffPolicyAlgorithm(BaseAlgorithm):
         callback.on_rollout_end()
 
         return RolloutReturn(mean_reward, total_steps, total_episodes, continue_training)
+
+    ############################################################
+    # the following should be implemented by subclass to support offline rl:
+    # _on_mini_batch : equivalent to the _on_step in the online rl settings. to update the target network
+    def _on_mini_batch(self) -> None:
+        """
+        Method called after each minibatch in the static buffer (offline rl).
+        It is meant to trigger DQN target network update
+        but can be used for other purposes
+        """
+        pass
+
+    # _train_on_batch : equivalent to the train in the online rl settings. to update the networks per batch of samples
+    def _train_on_batch(self, observations, next_observations, actions, rewards, dones):
+        raise NotImplementedError()
