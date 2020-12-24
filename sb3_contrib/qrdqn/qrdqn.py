@@ -337,11 +337,27 @@ class QRDQN(OffPolicyAlgorithm):
     def _train_on_batch(self,observations,next_observations,actions,rewards,dones):
         batch_size = observations.shape[0]
         losses = []
+        double_q = True
+
         with th.no_grad():
+            # orig calc - start
+            # # Compute the quantiles of next observation
+            # next_quantiles = self.quantile_net_target(next_observations)
+            # # Follow greedy policy: use the one with the highest value
+            # next_quantiles, _ = next_quantiles.max(dim=2)
+            # # 1-step TD target
+            # target_quantiles = rewards + (1 - dones) * self.gamma * next_quantiles
+            # orig calc - end
+
             # Compute the quantiles of next observation
-            next_quantiles = self.quantile_net_target(next_observations)
-            # Follow greedy policy: use the one with the highest value
-            next_quantiles, _ = next_quantiles.max(dim=2)
+            target_quantiles = self.quantile_net_target(next_observations)
+            if double_q:
+                next_quantiles = self.quantile_net(next_observations)
+            else:
+                next_quantiles = target_quantiles
+            best_next_actions = next_quantiles.mean(dim=1).argmax(dim=1, keepdim=True)
+            actions_index = best_next_actions[..., None].expand(batch_size, self.n_quantiles, 1)
+            next_quantiles = target_quantiles.gather(dim=2, index=actions_index).squeeze(dim=2)
             # 1-step TD target
             target_quantiles = rewards + (1 - dones) * self.gamma * next_quantiles
 
