@@ -32,7 +32,7 @@ agent_params.gamma = 0.99
 agent_params.target_update_interval = 500     # in offline mode, measure by minibatches
 agent_params.tau = 1.0                      # perform hard update (copy the parameters)
 agent_params.gradient_steps = 1
-agent_params.policy_kwargs = dict(net_arch=[64])
+agent_params.policy_kwargs = dict(net_arch=[64],n_quantiles=50)
 
 
 ##########################################################

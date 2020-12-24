@@ -151,7 +151,7 @@ class QRDQN(OffPolicyAlgorithm):
         self.exploration_rate = self.exploration_schedule(self._current_progress_remaining)
         logger.record("rollout/exploration rate", self.exploration_rate)
 
-    def train(self, gradient_steps: int, batch_size: int = 100) -> None:
+    def orig_train(self, gradient_steps: int, batch_size: int = 100) -> None:
         # Update learning rate according to schedule
         self._update_learning_rate(self.policy.optimizer)
 
@@ -193,6 +193,55 @@ class QRDQN(OffPolicyAlgorithm):
 
         logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         logger.record("train/loss", np.mean(losses))
+
+    def train(self, gradient_steps: int, batch_size: int = 100) -> None:
+        # Update learning rate according to schedule
+        self._update_learning_rate(self.policy.optimizer)
+        double_q = True
+        losses = []
+        for gradient_step in range(gradient_steps):
+            # Sample replay buffer
+            replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+
+            with th.no_grad():
+                # Compute the quantiles of next observation
+                target_quantiles = self.quantile_net_target(replay_data.next_observations)
+                if double_q:
+                    next_quantiles = self.quantile_net(replay_data.next_observations)
+                else:
+                    next_quantiles = target_quantiles
+                best_next_actions = next_quantiles.mean(dim=1).argmax(dim=1,keepdim=True)
+                actions_index = best_next_actions[...,None].expand(batch_size,self.n_quantiles,1)
+                next_quantiles = target_quantiles.gather(dim=2,index=actions_index).squeeze(dim=2)
+                # 1-step TD target
+                target_quantiles = replay_data.rewards + (1 - replay_data.dones) * self.gamma * next_quantiles
+
+            # Get current quantile estimates
+            current_quantiles = self.quantile_net(replay_data.observations)
+
+            # Make "n_quantiles" copies of actions, and reshape to (batch_size, n_quantiles, 1).
+            actions = replay_data.actions[..., None].long().expand(batch_size, self.n_quantiles, 1)
+            # Retrieve the quantiles for the actions from the replay buffer
+            current_quantiles = th.gather(current_quantiles, dim=2, index=actions).squeeze(dim=2)
+
+            # Compute Quantile Huber loss, summing over a quantile dimension as in the paper.
+            loss = quantile_huber_loss(current_quantiles, target_quantiles, sum_over_quantiles=True)
+            losses.append(loss.item())
+
+            # Optimize the policy
+            self.policy.optimizer.zero_grad()
+            loss.backward()
+            # Clip gradient norm
+            if self.max_grad_norm is not None:
+                th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+            self.policy.optimizer.step()
+
+        # Increase update counter
+        self._n_updates += gradient_steps
+
+        logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        logger.record("train/loss", np.mean(losses))
+
 
     def predict(
         self,

@@ -10,7 +10,7 @@ env_params.env_id = 'acrobot'
 # Policy        #
 #################
 policy = 'MlpPolicy'
-
+policy_kwargs={'net_arch': [64],'n_quantiles': 50}
 
 ##########################################################
 # Agent Params                                           #
@@ -40,6 +40,12 @@ policy = 'MlpPolicy'
 agent_params = QRDQNAgentParams()
 # here we can change the various parameters - for example, we can change the batch size
 agent_params.policy = policy
+agent_params.policy_kwargs = policy_kwargs
+agent_params.buffer_size = 50000
+agent_params.learning_starts = 1000
+agent_params.learning_rate = 1e-3
+agent_params.exploration_final_eps= 0.1
+agent_params.target_update_interval = 500
 
 
 ##########################################################
