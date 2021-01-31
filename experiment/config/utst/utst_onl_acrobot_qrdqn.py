@@ -10,42 +10,27 @@ env_params.env_id = 'acrobot'
 # Policy        #
 #################
 policy = 'MlpPolicy'
-policy_kwargs={'net_arch': [64],'n_quantiles': 50}
+policy_kwargs={'net_arch': [256,256],'n_quantiles': 25}
 
 ##########################################################
 # Agent Params                                           #
-
-# Default values:
-# policy = 'MlpPolicy'  # or 'CnnPolicy' or 'CustomDQNPolicy'
-# buffer_size = 50000
-# learning_rate = 1e-4
-# learning_starts = 1000
-# target_network_update_freq = 500
-# train_freq = 1
-# exploration_initial_eps = 1.0
-# exploration_final_eps = 0.02
-# exploration_fraction = 0.1
-# prioritized_replay_alpha = 0.6
-# prioritized_replay = False
-# param_noise = False
-# gamma = 0.99
-# batch_size = 32
-# double_q = True
-# prioritized_replay_beta0 = 0.4
-# prioritized_replay_beta_iters = None
-# prioritized_replay_eps = 1e-6
-# n_cpu_tf_sess = None
-# policy_kwargs = None
+# copied from the qrdqn.yml
 ##########################################################
 agent_params = QRDQNAgentParams()
 # here we can change the various parameters - for example, we can change the batch size
 agent_params.policy = policy
-agent_params.policy_kwargs = policy_kwargs
+agent_params.learning_rate = 6.3e-4
+agent_params.batch_size = 128
 agent_params.buffer_size = 50000
-agent_params.learning_starts = 1000
-agent_params.learning_rate = 1e-3
+agent_params.learning_starts = 0
+agent_params.gamma = 0.99
+agent_params.target_update_interval = 250
+agent_params.train_freq = 4
+agent_params.gradient_steps = -1
+agent_params.exploration_fraction = 0.12
 agent_params.exploration_final_eps= 0.1
-agent_params.target_update_interval = 500
+agent_params.policy_kwargs = policy_kwargs
+
 
 
 ##########################################################
